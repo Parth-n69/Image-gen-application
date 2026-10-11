@@ -21,16 +21,94 @@
   const isLoginPage = window.location.pathname.endsWith('login.html');
   const isResetPage = window.location.pathname.endsWith('reset-password.html');
 
-  // Helper to map error messages
+  // Supabase Email OTP length setting from config (default 8, or configure in Supabase dashboard)
+  const otpLength = (typeof OTP_LENGTH !== 'undefined' && OTP_LENGTH) ? parseInt(OTP_LENGTH, 10) : 8;
+
+  // SessionStorage keys for OTP flow (only email and numerical timers/counts, NEVER passwords or tokens)
+  const OTP_STORAGE_KEYS = {
+    PENDING_EMAIL: 'pixabel_pending_signup_email',
+    RESEND_COUNT: 'pixabel_otp_resend_count',
+    WRONG_ATTEMPTS: 'pixabel_otp_wrong_attempts',
+    LOCKOUT_UNTIL: 'pixabel_otp_lockout_until',
+    RESEND_UNTIL: 'pixabel_otp_resend_until'
+  };
+
+  // Helper: Mask email (e.g. "parth@gmail.com" -> "p****@gmail.com")
+  function maskEmail(email) {
+    if (!email || typeof email !== 'string') return '';
+    const parts = email.split('@');
+    if (parts.length !== 2) return email;
+    const [local, domain] = parts;
+    if (!local) return email;
+    const visible = local.charAt(0);
+    const asterisks = '*'.repeat(Math.max(local.length - 1, 4));
+    return `${visible}${asterisks}@${domain}`;
+  }
+
+  // Helper to map generic auth error messages
   function mapErrorMsg(error) {
     if (!error) return "An unknown error occurred.";
     const msg = error.message || "";
     if (msg.includes("Invalid login credentials")) return "Incorrect email or password.";
-    if (msg.includes("User already registered")) return "An account with this email exists. Try signing in.";
-    if (msg.includes("Email not confirmed") || msg.includes("email address is not confirmed")) return "Please confirm your email first.";
-    if (msg.includes("rate limit") || msg.includes("Too many requests")) return "Too many attempts. Please wait a minute.";
-    if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) return "Connection problem. Check your internet and retry.";
+    if (msg.includes("User already registered") || error.code === "user_already_exists") {
+      return "An account with this email already exists. Try signing in.";
+    }
+    if (msg.includes("Email not confirmed") || msg.includes("email address is not confirmed") || error.code === "email_not_confirmed") {
+      return "Please confirm your email first.";
+    }
+    if (msg.includes("rate limit") || msg.includes("Too many requests") || error.status === 429) {
+      return "Too many attempts. Please wait a minute.";
+    }
+    if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+      return "Connection problem. Check your internet and retry.";
+    }
     return msg;
+  }
+
+  // Helper to map OTP verification & resend error messages
+  function mapOtpError(error) {
+    if (!error) return "An unknown error occurred.";
+    const msg = (error.message || "").toLowerCase();
+    const code = (error.code || "").toLowerCase();
+    const status = error.status;
+
+    if (
+      status === 429 ||
+      msg.includes("rate limit") ||
+      msg.includes("too many requests") ||
+      code.includes("over_request_rate_limit") ||
+      code.includes("over_email_send_rate_limit")
+    ) {
+      return "Too many attempts. Please wait a minute.";
+    }
+
+    if (
+      msg.includes("failed to fetch") ||
+      msg.includes("networkerror") ||
+      msg.includes("network error") ||
+      msg.includes("fetch failed") ||
+      msg.includes("load failed")
+    ) {
+      return "Connection problem. Check your internet and retry.";
+    }
+
+    if (
+      msg.includes("token has expired") ||
+      msg.includes("is invalid") ||
+      msg.includes("invalid token") ||
+      msg.includes("token expired") ||
+      msg.includes("expired") ||
+      msg.includes("invalid") ||
+      msg.includes("incorrect") ||
+      msg.includes("bad_jwt") ||
+      code === "otp_expired" ||
+      code === "bad_code" ||
+      code === "invalid_grant"
+    ) {
+      return "That code is incorrect or has expired. Request a new one.";
+    }
+
+    return error.message || "An unknown error occurred.";
   }
 
   if (isLoginPage) {
@@ -61,32 +139,52 @@
       });
     }
 
-    // Tabs
+    // Tabs & Panels
     const tabSignin = document.getElementById("tab-signin");
     const tabSignup = document.getElementById("tab-signup");
     const formSignin = document.getElementById("form-signin");
     const formSignup = document.getElementById("form-signup");
     const authMain = document.getElementById("auth-main-container");
     const forgotContainer = document.getElementById("auth-forgot-container");
-    const checkInboxContainer = document.getElementById("auth-check-inbox");
+    const verifyContainer = document.getElementById("auth-verify-container");
+    const verifySubtitle = document.getElementById("verify-subtitle");
+    const verifyEmailDisplay = document.getElementById("verify-email-display");
+    const verifyInfoNotice = document.getElementById("verify-info-notice");
+    const otpInputsContainer = document.getElementById("otp-inputs-container");
+    const otpGlobalErr = document.getElementById("otp-global-err");
+    const otpSuccessMsg = document.getElementById("otp-success-msg");
+    const btnVerifyOtp = document.getElementById("btn-verify-otp");
+    const btnVerifyText = document.getElementById("btn-verify-text");
+    const spinnerVerify = document.getElementById("spinner-verify");
+    const btnResendOtp = document.getElementById("btn-resend-otp");
+    const otpResendStatus = document.getElementById("otp-resend-status");
+    const btnDifferentEmail = document.getElementById("btn-different-email");
+    const formVerifyOtp = document.getElementById("form-verify-otp");
+
+    let resendInterval = null;
+    let lockoutInterval = null;
+    let isVerifying = false;
 
     function switchTab(tab) {
       if (tab === "signup") {
-        tabSignin.classList.remove("active");
-        tabSignup.classList.add("active");
-        formSignin.classList.remove("active");
-        formSignup.classList.add("active");
+        tabSignin?.classList.remove("active");
+        tabSignup?.classList.add("active");
+        formSignin?.classList.remove("active");
+        formSignup?.classList.add("active");
         window.location.hash = "signup";
       } else {
-        tabSignup.classList.remove("active");
-        tabSignin.classList.add("active");
-        formSignup.classList.remove("active");
-        formSignin.classList.add("active");
+        tabSignup?.classList.remove("active");
+        tabSignin?.classList.add("active");
+        formSignup?.classList.remove("active");
+        formSignin?.classList.add("active");
         window.location.hash = "signin";
       }
-      authMain.style.display = "block";
-      forgotContainer.classList.remove("active");
-      checkInboxContainer.style.display = "none";
+      if (authMain) authMain.style.display = "block";
+      if (forgotContainer) forgotContainer.classList.remove("active");
+      if (verifyContainer) {
+        verifyContainer.classList.remove("active");
+        verifyContainer.style.display = "none";
+      }
     }
 
     if (window.location.hash === "#signup") switchTab("signup");
@@ -101,7 +199,6 @@
         const type = input.getAttribute("type") === "password" ? "text" : "password";
         input.setAttribute("type", type);
         
-        // Update SVG (eye open/closed)
         if (type === "text") {
           this.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22"/></svg>`;
         } else {
@@ -110,8 +207,12 @@
       });
     });
 
-    // Password Strength Logic
+    // Password Strength & Signup Validation
+    const signupName = document.getElementById("signup-name");
+    const signupUsername = document.getElementById("signup-username");
+    const signupEmail = document.getElementById("signup-email");
     const signupPwd = document.getElementById("signup-pwd");
+    const signupPwdConfirm = document.getElementById("signup-pwd-confirm");
     const pwdBar1 = document.getElementById("pwd-bar-1");
     const pwdBar2 = document.getElementById("pwd-bar-2");
     const pwdBar3 = document.getElementById("pwd-bar-3");
@@ -119,6 +220,11 @@
     const ruleLen = document.getElementById("rule-len");
     const btnSubmitSignup = document.getElementById("btn-submit-signup");
     const signupTerms = document.getElementById("signup-terms");
+
+    signupUsername?.addEventListener("input", function() {
+      this.value = this.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+      validateSignupForm();
+    });
     
     function validateSignupForm() {
       const p = signupPwd ? signupPwd.value : "";
@@ -130,7 +236,6 @@
         else ruleLen.classList.remove("valid");
       }
       
-      // Basic strength estimation
       let strength = 0;
       if (isLen) strength++;
       if (/[A-Z]/.test(p) && /[a-z]/.test(p) && /[0-9]/.test(p)) strength++;
@@ -155,7 +260,460 @@
     signupPwd?.addEventListener("input", validateSignupForm);
     signupTerms?.addEventListener("change", validateSignupForm);
 
-    // Form Submissions
+    // ── OTP VERIFICATION LOGIC ────────────────────────────────
+
+    function renderOtpBoxes() {
+      if (!otpInputsContainer) return;
+      otpInputsContainer.innerHTML = "";
+      for (let i = 0; i < otpLength; i++) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "otp-digit-input";
+        input.inputMode = "numeric";
+        input.autocomplete = "one-time-code";
+        input.pattern = "[a-zA-Z0-9]*";
+        input.maxLength = 1;
+        input.setAttribute("aria-label", `Character ${i + 1} of ${otpLength}`);
+        input.setAttribute("data-index", i.toString());
+        input.id = `otp-digit-${i}`;
+        input.required = true;
+        otpInputsContainer.appendChild(input);
+      }
+      bindOtpBoxEvents();
+    }
+
+    function getCode() {
+      if (!otpInputsContainer) return "";
+      const boxes = otpInputsContainer.querySelectorAll(".otp-digit-input");
+      let code = "";
+      boxes.forEach(b => { code += b.value.trim(); });
+      return code;
+    }
+
+    function clearCodeBoxes() {
+      if (!otpInputsContainer) return;
+      const boxes = otpInputsContainer.querySelectorAll(".otp-digit-input");
+      boxes.forEach(b => {
+        b.value = "";
+        b.classList.add("has-error");
+      });
+      setTimeout(() => {
+        boxes.forEach(b => b.classList.remove("has-error"));
+      }, 400);
+      boxes[0]?.focus();
+    }
+
+    function isLockedOut() {
+      const until = parseInt(sessionStorage.getItem(OTP_STORAGE_KEYS.LOCKOUT_UNTIL) || "0", 10);
+      return Date.now() < until;
+    }
+
+    function checkAndResumeLockout() {
+      const until = parseInt(sessionStorage.getItem(OTP_STORAGE_KEYS.LOCKOUT_UNTIL) || "0", 10);
+      const remaining = Math.ceil((until - Date.now()) / 1000);
+      if (remaining > 0) {
+        startLockoutTimer(remaining);
+      } else {
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.LOCKOUT_UNTIL);
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.WRONG_ATTEMPTS);
+        if (btnVerifyOtp) btnVerifyOtp.disabled = false;
+        if (btnVerifyText) btnVerifyText.textContent = "Verify";
+      }
+    }
+
+    function startLockoutTimer(durationSeconds) {
+      clearInterval(lockoutInterval);
+      if (btnVerifyOtp) btnVerifyOtp.disabled = true;
+      if (otpInputsContainer) {
+        otpInputsContainer.querySelectorAll(".otp-digit-input").forEach(b => { b.disabled = true; });
+      }
+
+      const endTime = Date.now() + durationSeconds * 1000;
+      sessionStorage.setItem(OTP_STORAGE_KEYS.LOCKOUT_UNTIL, endTime.toString());
+
+      const updateLockout = () => {
+        const remaining = Math.ceil((endTime - Date.now()) / 1000);
+        if (remaining > 0) {
+          if (btnVerifyText) btnVerifyText.textContent = `Locked (${remaining}s)`;
+          if (otpGlobalErr) {
+            otpGlobalErr.textContent = "Too many attempts. Please wait a minute.";
+            otpGlobalErr.classList.add("active");
+          }
+        } else {
+          clearInterval(lockoutInterval);
+          sessionStorage.removeItem(OTP_STORAGE_KEYS.LOCKOUT_UNTIL);
+          sessionStorage.removeItem(OTP_STORAGE_KEYS.WRONG_ATTEMPTS);
+          if (btnVerifyOtp) btnVerifyOtp.disabled = false;
+          if (btnVerifyText) btnVerifyText.textContent = "Verify";
+          if (otpGlobalErr) {
+            otpGlobalErr.textContent = "";
+            otpGlobalErr.classList.remove("active");
+          }
+          if (otpInputsContainer) {
+            otpInputsContainer.querySelectorAll(".otp-digit-input").forEach(b => { b.disabled = false; });
+            otpInputsContainer.querySelector(".otp-digit-input")?.focus();
+          }
+        }
+      };
+
+      updateLockout();
+      lockoutInterval = setInterval(updateLockout, 1000);
+    }
+
+    function checkAndResumeResend() {
+      const until = parseInt(sessionStorage.getItem(OTP_STORAGE_KEYS.RESEND_UNTIL) || "0", 10);
+      const resendCount = parseInt(sessionStorage.getItem(OTP_STORAGE_KEYS.RESEND_COUNT) || "0", 10);
+
+      if (resendCount >= 5) {
+        if (btnResendOtp) {
+          btnResendOtp.disabled = true;
+          btnResendOtp.textContent = "Resend code";
+        }
+        if (otpResendStatus) {
+          otpResendStatus.textContent = "Too many requests. Please wait a few minutes.";
+          otpResendStatus.classList.add("active");
+        }
+        return;
+      }
+
+      const remaining = Math.ceil((until - Date.now()) / 1000);
+      if (remaining > 0) {
+        startResendTimer(remaining);
+      } else {
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.RESEND_UNTIL);
+        if (btnResendOtp) {
+          btnResendOtp.disabled = false;
+          btnResendOtp.textContent = "Resend code";
+        }
+      }
+    }
+
+    function startResendTimer(durationSeconds) {
+      clearInterval(resendInterval);
+      if (btnResendOtp) btnResendOtp.disabled = true;
+
+      const endTime = Date.now() + durationSeconds * 1000;
+      sessionStorage.setItem(OTP_STORAGE_KEYS.RESEND_UNTIL, endTime.toString());
+
+      const updateResend = () => {
+        const remaining = Math.ceil((endTime - Date.now()) / 1000);
+        if (remaining > 0) {
+          if (btnResendOtp) btnResendOtp.textContent = `Resend in ${remaining}s`;
+        } else {
+          clearInterval(resendInterval);
+          sessionStorage.removeItem(OTP_STORAGE_KEYS.RESEND_UNTIL);
+          const count = parseInt(sessionStorage.getItem(OTP_STORAGE_KEYS.RESEND_COUNT) || "0", 10);
+          if (count >= 5) {
+            if (btnResendOtp) {
+              btnResendOtp.disabled = true;
+              btnResendOtp.textContent = "Resend code";
+            }
+            if (otpResendStatus) {
+              otpResendStatus.textContent = "Too many requests. Please wait a few minutes.";
+              otpResendStatus.classList.add("active");
+            }
+          } else {
+            if (btnResendOtp) {
+              btnResendOtp.disabled = false;
+              btnResendOtp.textContent = "Resend code";
+            }
+          }
+        }
+      };
+
+      updateResend();
+      resendInterval = setInterval(updateResend, 1000);
+    }
+
+    function bindOtpBoxEvents() {
+      if (!otpInputsContainer) return;
+      const boxes = otpInputsContainer.querySelectorAll(".otp-digit-input");
+      boxes.forEach((box, index) => {
+        box.addEventListener("focus", () => {
+          box.select();
+        });
+
+        box.addEventListener("input", () => {
+          const val = box.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+          if (val.length > 1) {
+            // Pasted or autofilled into single input
+            const chars = val.slice(0, otpLength);
+            boxes.forEach((b, idx) => {
+              b.value = chars[idx] || "";
+            });
+            const nextIdx = Math.min(chars.length, otpLength - 1);
+            boxes[nextIdx]?.focus();
+            if (getCode().length === otpLength) {
+              submitOtp();
+            }
+            return;
+          }
+
+          box.value = val;
+          if (val && index < otpLength - 1) {
+            boxes[index + 1]?.focus();
+          }
+
+          if (getCode().length === otpLength) {
+            submitOtp();
+          }
+        });
+
+        box.addEventListener("keydown", (e) => {
+          if (e.key === "Backspace") {
+            if (box.value) {
+              box.value = "";
+              e.preventDefault();
+            } else if (index > 0) {
+              boxes[index - 1].focus();
+              boxes[index - 1].value = "";
+              e.preventDefault();
+            }
+          } else if (e.key === "ArrowLeft") {
+            if (index > 0) {
+              boxes[index - 1].focus();
+              e.preventDefault();
+            }
+          } else if (e.key === "ArrowRight") {
+            if (index < otpLength - 1) {
+              boxes[index + 1].focus();
+              e.preventDefault();
+            }
+          } else if (e.key === "Delete") {
+            box.value = "";
+          }
+        });
+
+        box.addEventListener("paste", (e) => {
+          e.preventDefault();
+          const pasted = (e.clipboardData || window.clipboardData)?.getData("text") || "";
+          const chars = pasted.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, otpLength);
+          if (!chars) return;
+          boxes.forEach((b, idx) => {
+            b.value = chars[idx] || "";
+          });
+          const nextIdx = Math.min(chars.length, otpLength - 1);
+          boxes[nextIdx]?.focus();
+          if (chars.length === otpLength) {
+            submitOtp();
+          }
+        });
+      });
+    }
+
+    async function submitOtp() {
+      if (isVerifying || isLockedOut()) return;
+
+      const token = getCode();
+      if (token.length < otpLength) {
+        if (otpGlobalErr) {
+          otpGlobalErr.textContent = "Please enter the complete verification code.";
+          otpGlobalErr.classList.add("active");
+        }
+        return;
+      }
+
+      const email = sessionStorage.getItem(OTP_STORAGE_KEYS.PENDING_EMAIL);
+      if (!email) {
+        closeOtpScreen("signup");
+        return;
+      }
+
+      isVerifying = true;
+      if (btnVerifyOtp) btnVerifyOtp.disabled = true;
+      if (spinnerVerify) spinnerVerify.classList.add("active");
+      if (otpGlobalErr) {
+        otpGlobalErr.textContent = "";
+        otpGlobalErr.classList.remove("active");
+      }
+      if (otpInputsContainer) {
+        otpInputsContainer.querySelectorAll(".otp-digit-input").forEach(b => { b.disabled = true; });
+      }
+
+      const { data, error } = await supabaseClient.auth.verifyOtp({
+        email,
+        token,
+        type: 'signup'
+      });
+
+      isVerifying = false;
+      if (spinnerVerify) spinnerVerify.classList.remove("active");
+      if (otpInputsContainer) {
+        otpInputsContainer.querySelectorAll(".otp-digit-input").forEach(b => { b.disabled = false; });
+      }
+
+      if (error) {
+        let wrongAttempts = parseInt(sessionStorage.getItem(OTP_STORAGE_KEYS.WRONG_ATTEMPTS) || "0", 10) + 1;
+        sessionStorage.setItem(OTP_STORAGE_KEYS.WRONG_ATTEMPTS, wrongAttempts.toString());
+
+        if (otpGlobalErr) {
+          otpGlobalErr.textContent = mapOtpError(error);
+          otpGlobalErr.classList.add("active");
+        }
+
+        clearCodeBoxes();
+
+        if (wrongAttempts >= 5) {
+          startLockoutTimer(60);
+        } else {
+          if (btnVerifyOtp) btnVerifyOtp.disabled = false;
+        }
+      } else {
+        // Success! User has a valid session. Clear OTP pending state & redirect
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.PENDING_EMAIL);
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.RESEND_COUNT);
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.WRONG_ATTEMPTS);
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.LOCKOUT_UNTIL);
+        sessionStorage.removeItem(OTP_STORAGE_KEYS.RESEND_UNTIL);
+        sessionStorage.removeItem("guest_mode");
+
+        if (otpSuccessMsg) otpSuccessMsg.style.display = "block";
+        if (btnVerifyOtp) btnVerifyOtp.style.display = "none";
+        if (otpInputsContainer) {
+          otpInputsContainer.style.opacity = "0.4";
+          otpInputsContainer.querySelectorAll(".otp-digit-input").forEach(b => { b.disabled = true; });
+        }
+
+        setTimeout(() => {
+          window.location.replace("index.html");
+        }, 1000);
+      }
+    }
+
+    formVerifyOtp?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submitOtp();
+    });
+
+    btnResendOtp?.addEventListener("click", async () => {
+      if (btnResendOtp.disabled) return;
+      const count = parseInt(sessionStorage.getItem(OTP_STORAGE_KEYS.RESEND_COUNT) || "0", 10);
+      if (count >= 5) {
+        btnResendOtp.disabled = true;
+        if (otpResendStatus) {
+          otpResendStatus.textContent = "Too many requests. Please wait a few minutes.";
+          otpResendStatus.classList.add("active");
+        }
+        return;
+      }
+
+      const email = sessionStorage.getItem(OTP_STORAGE_KEYS.PENDING_EMAIL);
+      if (!email) {
+        closeOtpScreen("signup");
+        return;
+      }
+
+      btnResendOtp.disabled = true;
+      if (otpResendStatus) {
+        otpResendStatus.textContent = "";
+        otpResendStatus.classList.remove("active");
+      }
+
+      const { error } = await supabaseClient.auth.resend({
+        type: 'signup',
+        email
+      });
+
+      if (error) {
+        if (otpResendStatus) {
+          otpResendStatus.textContent = mapOtpError(error);
+          otpResendStatus.classList.add("active");
+        }
+        btnResendOtp.disabled = false;
+        return;
+      }
+
+      const newCount = count + 1;
+      sessionStorage.setItem(OTP_STORAGE_KEYS.RESEND_COUNT, newCount.toString());
+
+      if (otpResendStatus) {
+        otpResendStatus.textContent = "A new code has been sent.";
+        otpResendStatus.classList.add("active");
+        setTimeout(() => {
+          if (otpResendStatus.textContent === "A new code has been sent.") {
+            otpResendStatus.textContent = "";
+            otpResendStatus.classList.remove("active");
+          }
+        }, 3000);
+      }
+
+      if (newCount >= 5) {
+        btnResendOtp.disabled = true;
+        btnResendOtp.textContent = "Resend code";
+        if (otpResendStatus) {
+          otpResendStatus.textContent = "Too many requests. Please wait a few minutes.";
+          otpResendStatus.classList.add("active");
+        }
+      } else {
+        startResendTimer(60);
+      }
+    });
+
+    btnDifferentEmail?.addEventListener("click", () => {
+      closeOtpScreen("signup");
+    });
+
+    function openOtpScreen(email, infoMessage = "") {
+      sessionStorage.setItem(OTP_STORAGE_KEYS.PENDING_EMAIL, email);
+      if (verifyEmailDisplay) verifyEmailDisplay.textContent = maskEmail(email);
+
+      if (verifyInfoNotice) {
+        if (infoMessage) {
+          verifyInfoNotice.textContent = infoMessage;
+          verifyInfoNotice.style.display = "block";
+        } else {
+          verifyInfoNotice.style.display = "none";
+        }
+      }
+
+      if (authMain) authMain.style.display = "none";
+      if (forgotContainer) forgotContainer.classList.remove("active");
+      if (verifyContainer) {
+        verifyContainer.classList.add("active");
+        verifyContainer.style.display = "flex";
+      }
+
+      if (otpGlobalErr) {
+        otpGlobalErr.textContent = "";
+        otpGlobalErr.classList.remove("active");
+      }
+      if (otpResendStatus) {
+        otpResendStatus.textContent = "";
+        otpResendStatus.classList.remove("active");
+      }
+      if (otpSuccessMsg) otpSuccessMsg.style.display = "none";
+      if (btnVerifyOtp) btnVerifyOtp.style.display = "flex";
+      if (otpInputsContainer) otpInputsContainer.style.opacity = "1";
+
+      renderOtpBoxes();
+      checkAndResumeLockout();
+      checkAndResumeResend();
+      otpInputsContainer?.querySelector(".otp-digit-input")?.focus();
+    }
+
+    function closeOtpScreen(returnToTab = "signup") {
+      clearInterval(resendInterval);
+      clearInterval(lockoutInterval);
+      sessionStorage.removeItem(OTP_STORAGE_KEYS.PENDING_EMAIL);
+      sessionStorage.removeItem(OTP_STORAGE_KEYS.RESEND_COUNT);
+      sessionStorage.removeItem(OTP_STORAGE_KEYS.WRONG_ATTEMPTS);
+      sessionStorage.removeItem(OTP_STORAGE_KEYS.LOCKOUT_UNTIL);
+      sessionStorage.removeItem(OTP_STORAGE_KEYS.RESEND_UNTIL);
+
+      if (verifyContainer) {
+        verifyContainer.classList.remove("active");
+        verifyContainer.style.display = "none";
+      }
+      switchTab(returnToTab);
+    }
+
+    // Check on page load if user refreshed on OTP screen
+    const existingPendingEmail = sessionStorage.getItem(OTP_STORAGE_KEYS.PENDING_EMAIL);
+    if (existingPendingEmail) {
+      openOtpScreen(existingPendingEmail);
+    }
+
+    // ── FORM SUBMISSIONS ──────────────────────────────────────
     
     // SIGN IN
     formSignin?.addEventListener("submit", async (e) => {
@@ -168,9 +726,11 @@
       const spinner = document.getElementById("spinner-signin");
       
       globalErr.textContent = "";
+      globalErr.classList.remove("active");
       
       if (!email || !pwd) {
         globalErr.textContent = "Please fill in all fields.";
+        globalErr.classList.add("active");
         return;
       }
       
@@ -183,16 +743,28 @@
       });
       
       if (error) {
-        globalErr.textContent = mapErrorMsg(error);
-        if (error.message.includes("Email not confirmed")) {
-          // Add a resend link manually
-          globalErr.innerHTML = `Please confirm your email first. <a href="#" id="inline-resend" style="color: var(--gold); text-decoration: underline;">Resend</a>`;
-          document.getElementById("inline-resend").addEventListener("click", async (e) => {
-            e.preventDefault();
+        const isUnconfirmed =
+          error.code === 'email_not_confirmed' ||
+          error.message?.toLowerCase().includes("email not confirmed") ||
+          error.message?.toLowerCase().includes("email address is not confirmed");
+
+        if (isUnconfirmed) {
+          try {
             await supabaseClient.auth.resend({ type: 'signup', email });
-            globalErr.textContent = "Confirmation email resent. Check your inbox.";
-          });
+          } catch (_) {}
+
+          const pwdInput = document.getElementById("signin-pwd");
+          if (pwdInput) pwdInput.value = "";
+          btn.disabled = false;
+          spinner.classList.remove("active");
+
+          sessionStorage.setItem(OTP_STORAGE_KEYS.RESEND_UNTIL, (Date.now() + 60000).toString());
+          openOtpScreen(email, "Please verify your email to continue.");
+          return;
         }
+
+        globalErr.textContent = mapErrorMsg(error);
+        globalErr.classList.add("active");
         btn.disabled = false;
         spinner.classList.remove("active");
       } else {
@@ -202,29 +774,80 @@
     });
 
     // SIGN UP
-    let lastSignupEmail = "";
     formSignup?.addEventListener("submit", async (e) => {
       e.preventDefault();
       
-      const name = document.getElementById("signup-name").value.trim();
-      const email = document.getElementById("signup-email").value.trim();
-      const pwd = document.getElementById("signup-pwd").value;
-      const pwdConfirm = document.getElementById("signup-pwd-confirm").value;
+      const name = signupName ? signupName.value.trim() : "";
+      const username = signupUsername ? signupUsername.value.trim().toLowerCase() : "";
+      const email = signupEmail ? signupEmail.value.trim() : "";
+      const pwd = signupPwd ? signupPwd.value : "";
+      const pwdConfirm = signupPwdConfirm ? signupPwdConfirm.value : "";
       const globalErr = document.getElementById("signup-global-err");
+      const nameErr = document.getElementById("signup-name-err");
+      const usernameErr = document.getElementById("signup-username-err");
+      const emailErr = document.getElementById("signup-email-err");
+      const pwdErr = document.getElementById("signup-pwd-err");
       const pwdConfirmErr = document.getElementById("signup-pwd-confirm-err");
+      const termsErr = document.getElementById("signup-terms-err");
       
-      const btn = document.getElementById("btn-submit-signup");
+      const btn = btnSubmitSignup;
       const spinner = document.getElementById("spinner-signup");
       
-      globalErr.textContent = "";
-      pwdConfirmErr.textContent = "";
-      pwdConfirmErr.classList.remove("active");
-      
-      if (pwd !== pwdConfirm) {
-        pwdConfirmErr.textContent = "Passwords do not match.";
-        pwdConfirmErr.classList.add("active");
-        return;
+      [globalErr, nameErr, usernameErr, emailErr, pwdErr, pwdConfirmErr, termsErr].forEach(el => {
+        if (el) { el.textContent = ""; el.classList.remove("active"); }
+      });
+
+      let hasError = false;
+
+      if (name.length < 2) {
+        if (nameErr) {
+          nameErr.textContent = "Full name must be at least 2 characters.";
+          nameErr.classList.add("active");
+        }
+        hasError = true;
       }
+
+      if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+        if (usernameErr) {
+          usernameErr.textContent = "Username must be 3-20 characters long (lowercase letters, numbers, and underscores).";
+          usernameErr.classList.add("active");
+        }
+        hasError = true;
+      }
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (emailErr) {
+          emailErr.textContent = "Please enter a valid email address.";
+          emailErr.classList.add("active");
+        }
+        hasError = true;
+      }
+
+      if (pwd.length < 8) {
+        if (pwdErr) {
+          pwdErr.textContent = "Password must be at least 8 characters.";
+          pwdErr.classList.add("active");
+        }
+        hasError = true;
+      }
+
+      if (pwd !== pwdConfirm) {
+        if (pwdConfirmErr) {
+          pwdConfirmErr.textContent = "Passwords do not match.";
+          pwdConfirmErr.classList.add("active");
+        }
+        hasError = true;
+      }
+
+      if (signupTerms && !signupTerms.checked) {
+        if (termsErr) {
+          termsErr.textContent = "You must agree to the Terms and Privacy Policy.";
+          termsErr.classList.add("active");
+        }
+        hasError = true;
+      }
+
+      if (hasError) return;
       
       btn.disabled = true;
       spinner.classList.add("active");
@@ -233,61 +856,43 @@
         email,
         password: pwd,
         options: {
-          data: { full_name: name },
-          emailRedirectTo: window.location.origin + window.location.pathname.replace("login.html", "index.html")
+          data: {
+            full_name: name,
+            username: username
+          }
         }
       });
       
-      if (error) {
-        globalErr.textContent = mapErrorMsg(error);
-        btn.disabled = false;
-        spinner.classList.remove("active");
-      } else {
-        lastSignupEmail = email;
-        spinner.classList.remove("active");
-        // If auto-confirm is enabled, session will exist. Otherwise, show inbox message.
-        if (data.session) {
-          sessionStorage.removeItem("guest_mode");
-          window.location.replace("index.html");
-        } else {
-          authMain.style.display = "none";
-          document.getElementById("inbox-email-display").textContent = email;
-          checkInboxContainer.style.display = "flex";
-        }
-      }
-    });
+      btn.disabled = false;
+      spinner.classList.remove("active");
 
-    // RESEND EMAIL
-    const btnResend = document.getElementById("btn-resend-email");
-    const resendCountdown = document.getElementById("resend-countdown");
-    btnResend?.addEventListener("click", async () => {
-      if (btnResend.disabled || !lastSignupEmail) return;
-      
-      btnResend.disabled = true;
-      const { error } = await supabaseClient.auth.resend({
-        type: 'signup',
-        email: lastSignupEmail
-      });
-      
       if (error) {
-        resendCountdown.textContent = mapErrorMsg(error);
-        btnResend.disabled = false;
+        if (error.message?.includes("User already registered") || error.code === "user_already_exists") {
+          globalErr.textContent = "An account with this email already exists. Try signing in.";
+        } else {
+          globalErr.textContent = mapErrorMsg(error);
+        }
+        globalErr.classList.add("active");
         return;
       }
-      
-      let timeLeft = 60;
-      resendCountdown.textContent = `Sent! You can resend again in ${timeLeft}s`;
-      
-      const interval = setInterval(() => {
-        timeLeft--;
-        if (timeLeft <= 0) {
-          clearInterval(interval);
-          btnResend.disabled = false;
-          resendCountdown.textContent = "";
-        } else {
-          resendCountdown.textContent = `Sent! You can resend again in ${timeLeft}s`;
-        }
-      }, 1000);
+
+      // Check for existing user with empty identities array (Supabase email confirmation behavior)
+      if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        globalErr.textContent = "An account with this email already exists. Try signing in.";
+        globalErr.classList.add("active");
+        return;
+      }
+
+      // If auto-confirm is enabled, session will exist. Otherwise, proceed to OTP screen
+      if (data?.session) {
+        sessionStorage.removeItem("guest_mode");
+        window.location.replace("index.html");
+        return;
+      }
+
+      // Cooldown for resend starts because initial code was just sent
+      sessionStorage.setItem(OTP_STORAGE_KEYS.RESEND_UNTIL, (Date.now() + 60000).toString());
+      openOtpScreen(email);
     });
 
     // FORGOT PASSWORD

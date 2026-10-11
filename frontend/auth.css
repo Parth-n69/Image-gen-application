@@ -314,6 +314,100 @@
   display: flex;
 }
 
+/* ── Verify OTP Panel ────────────────────────────────── */
+.verify-panel {
+  display: none;
+  flex-direction: column;
+  animation: fadeIn 0.3s ease;
+}
+.verify-panel.active {
+  display: flex;
+}
+
+.otp-inputs-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 6px 0 10px;
+}
+
+.otp-digit-input {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 44px;
+  height: 50px;
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  caret-color: var(--gold);
+  text-transform: uppercase;
+  padding: 0;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background-color var(--t-fast);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.otp-digit-input:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.otp-digit-input:focus,
+.otp-digit-input:focus-visible {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), var(--glow);
+  background: var(--surface);
+}
+
+.otp-digit-input.has-error {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+  animation: otpShake 0.35s ease;
+}
+
+.otp-digit-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes otpShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+
+.otp-actions-wrap button.auth-link:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Ensure accessible contrast in light theme for error and notice messages (>= 4.5:1) */
+[data-theme="light"] .auth-error-msg {
+  color: #b3261e;
+}
+[data-theme="light"] .auth-input[aria-invalid="true"] {
+  border-color: #b3261e;
+}
+[data-theme="light"] .auth-input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 1px #b3261e;
+}
+[data-theme="light"] .otp-digit-input.has-error {
+  border-color: #b3261e;
+  box-shadow: 0 0 0 1px #b3261e;
+}
+[data-theme="light"] .auth-info-notice {
+  background: rgba(168, 132, 44, 0.12) !important;
+  border-color: var(--gold) !important;
+  color: #7c5c16 !important;
+}
+
 /* ── Mobile ──────────────────────────────────────────── */
 @media (max-width: 768px) {
   .auth-page {
@@ -338,7 +432,44 @@
   }
 }
 
+/* Responsive shrink for OTP boxes on smaller screens */
+@media (max-width: 420px) {
+  .otp-inputs-wrap {
+    gap: 4px;
+  }
+  .otp-digit-input {
+    height: 44px;
+    font-size: 1.15rem;
+    max-width: 38px;
+  }
+}
+
+@media (max-width: 340px) {
+  .otp-inputs-wrap {
+    gap: 3px;
+  }
+  .otp-digit-input {
+    height: 38px;
+    font-size: 1rem;
+    max-width: 32px;
+  }
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .auth-form.active,
+  .verify-panel.active,
+  .forgot-panel.active,
+  .otp-digit-input.has-error,
+  .auth-brand-panel::before,
+  .auth-spinner {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* ── Utilities ───────────────────────────────────────── */
 .auth-text-center { text-align: center; }
 .auth-mt-4 { margin-top: 16px; }
 .auth-mb-4 { margin-bottom: 16px; }
+

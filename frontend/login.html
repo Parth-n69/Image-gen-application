@@ -50,7 +50,7 @@
               <div class="auth-input-wrap">
                 <input type="email" id="signin-email" class="auth-input" autocomplete="email" required />
               </div>
-              <div class="auth-error-msg" id="signin-email-err"></div>
+              <div class="auth-error-msg" id="signin-email-err" role="alert" aria-live="polite"></div>
             </div>
             
             <div class="auth-field">
@@ -61,7 +61,7 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
               </div>
-              <div class="auth-error-msg" id="signin-pwd-err"></div>
+              <div class="auth-error-msg" id="signin-pwd-err" role="alert" aria-live="polite"></div>
             </div>
 
             <div class="auth-links">
@@ -69,7 +69,7 @@
               <button type="button" class="auth-link" id="btn-forgot-pwd">Forgot password?</button>
             </div>
 
-            <div class="auth-error-msg auth-text-center auth-mt-4" id="signin-global-err"></div>
+            <div class="auth-error-msg auth-text-center auth-mt-4" id="signin-global-err" role="alert" aria-live="assertive"></div>
 
             <button type="submit" class="auth-btn-primary" id="btn-submit-signin">
               <span class="auth-spinner" id="spinner-signin"></span>
@@ -89,7 +89,15 @@
               <div class="auth-input-wrap">
                 <input type="text" id="signup-name" class="auth-input" autocomplete="name" required />
               </div>
-              <div class="auth-error-msg" id="signup-name-err"></div>
+              <div class="auth-error-msg" id="signup-name-err" role="alert" aria-live="polite"></div>
+            </div>
+
+            <div class="auth-field">
+              <label for="signup-username">Username</label>
+              <div class="auth-input-wrap">
+                <input type="text" id="signup-username" class="auth-input" autocomplete="username" pattern="[a-z0-9_]{3,20}" title="3-20 characters, lowercase letters, numbers, underscore only" required />
+              </div>
+              <div class="auth-error-msg" id="signup-username-err" role="alert" aria-live="polite"></div>
             </div>
 
             <div class="auth-field">
@@ -97,7 +105,7 @@
               <div class="auth-input-wrap">
                 <input type="email" id="signup-email" class="auth-input" autocomplete="email" required />
               </div>
-              <div class="auth-error-msg" id="signup-email-err"></div>
+              <div class="auth-error-msg" id="signup-email-err" role="alert" aria-live="polite"></div>
             </div>
 
             <div class="auth-field">
@@ -117,7 +125,7 @@
               <ul class="pwd-rules">
                 <li id="rule-len">At least 8 characters</li>
               </ul>
-              <div class="auth-error-msg" id="signup-pwd-err"></div>
+              <div class="auth-error-msg" id="signup-pwd-err" role="alert" aria-live="polite"></div>
             </div>
 
             <div class="auth-field">
@@ -125,21 +133,64 @@
               <div class="auth-input-wrap">
                 <input type="password" id="signup-pwd-confirm" class="auth-input" autocomplete="new-password" required />
               </div>
-              <div class="auth-error-msg" id="signup-pwd-confirm-err"></div>
+              <div class="auth-error-msg" id="signup-pwd-confirm-err" role="alert" aria-live="polite"></div>
             </div>
 
             <div class="auth-checkbox-wrap">
               <input type="checkbox" id="signup-terms" required />
               <label for="signup-terms">I agree to the <a href="terms.html" class="auth-link">Terms</a> and <a href="privacy.html" class="auth-link">Privacy Policy</a></label>
             </div>
-            <div class="auth-error-msg" id="signup-terms-err"></div>
+            <div class="auth-error-msg" id="signup-terms-err" role="alert" aria-live="polite"></div>
 
-            <div class="auth-error-msg auth-text-center" id="signup-global-err"></div>
+            <div class="auth-error-msg auth-text-center" id="signup-global-err" role="alert" aria-live="assertive"></div>
 
             <button type="submit" class="auth-btn-primary" id="btn-submit-signup" disabled>
               <span class="auth-spinner" id="spinner-signup"></span>
               Create account
             </button>
+          </form>
+        </div>
+
+        <!-- VERIFY EMAIL (OTP) SCREEN -->
+        <div id="auth-verify-container" class="verify-panel auth-text-center" role="region" aria-label="Verify your email">
+          <div class="verify-icon-wrap" style="margin: 12px auto 20px; color: var(--gold);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="48" height="48" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+              <path d="M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+            </svg>
+          </div>
+          <h2 style="font-family: var(--font-serif); font-size: 1.75rem; font-weight: 600; margin-bottom: 8px; color: var(--text);">Verify your email</h2>
+          <p id="verify-subtitle" style="font-size: 0.95rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
+            We sent a code to <strong id="verify-email-display" style="color: var(--text); font-weight: 600;"></strong>
+          </p>
+          <div id="verify-info-notice" class="auth-info-notice" style="display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.85rem; background: rgba(212, 175, 55, 0.1); border: 1px solid var(--gold-soft); color: var(--gold-soft);" role="status" aria-live="polite"></div>
+
+          <form id="form-verify-otp" novalidate style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="otp-inputs-wrap" id="otp-inputs-container" role="group" aria-label="Verification Code">
+              <!-- Dynamically rendered OTP digit boxes based on OTP_LENGTH -->
+            </div>
+
+            <div class="auth-error-msg auth-text-center" id="otp-global-err" role="alert" aria-live="assertive"></div>
+            
+            <div class="auth-success-msg auth-text-center" id="otp-success-msg" role="status" aria-live="polite" style="display: none; color: var(--success); font-size: 0.95rem; font-weight: 500;">
+              ✓ Email verified! Redirecting to Pixabel...
+            </div>
+
+            <button type="submit" class="auth-btn-primary" id="btn-verify-otp">
+              <span class="auth-spinner" id="spinner-verify"></span>
+              <span id="btn-verify-text">Verify</span>
+            </button>
+
+            <div class="otp-actions-wrap" style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
+              <button type="button" class="auth-link" id="btn-resend-otp" style="font-size: 0.9rem;">
+                Resend code
+              </button>
+              <div id="otp-resend-status" class="auth-error-msg auth-text-center" role="alert" aria-live="polite"></div>
+
+              <button type="button" class="auth-link" id="btn-different-email" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                ← Use a different email
+              </button>
+            </div>
           </form>
         </div>
 
@@ -154,11 +205,11 @@
               <div class="auth-input-wrap">
                 <input type="email" id="forgot-email" class="auth-input" autocomplete="email" required />
               </div>
-              <div class="auth-error-msg" id="forgot-email-err"></div>
+              <div class="auth-error-msg" id="forgot-email-err" role="alert" aria-live="polite"></div>
             </div>
             
-            <div class="auth-error-msg auth-text-center" id="forgot-global-err"></div>
-            <div style="color: var(--success); font-size: 0.85rem; display: none; text-align: center;" id="forgot-success-msg">If that email exists, we sent a link.</div>
+            <div class="auth-error-msg auth-text-center" id="forgot-global-err" role="alert" aria-live="assertive"></div>
+            <div style="color: var(--success); font-size: 0.85rem; display: none; text-align: center;" id="forgot-success-msg" role="status" aria-live="polite">If that email exists, we sent a link.</div>
             
             <button type="submit" class="auth-btn-primary" id="btn-submit-forgot">
               <span class="auth-spinner" id="spinner-forgot"></span>
@@ -166,20 +217,6 @@
             </button>
             <button type="button" class="auth-btn-primary" style="background: transparent; border: 1px solid var(--border); color: var(--text);" id="btn-back-login">Back to login</button>
           </form>
-        </div>
-
-        <!-- CHECK INBOX SCREEN -->
-        <div id="auth-check-inbox" class="forgot-panel auth-text-center">
-          <div style="margin: 20px auto; color: var(--gold);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="48" height="48"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          </div>
-          <h2 style="font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 8px;">Check your inbox</h2>
-          <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 24px;">We sent a confirmation link to <strong id="inbox-email-display" style="color: var(--text);"></strong>. Please click the link to verify your account.</p>
-          
-          <button type="button" class="auth-btn-primary" id="btn-resend-email">
-             Resend email
-          </button>
-          <div style="margin-top: 16px; font-size: 0.8rem; color: var(--text-muted);" id="resend-countdown"></div>
         </div>
 
       </div>

@@ -73,12 +73,49 @@ HF_API_KEY=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 > ⚠️ **Never commit your real API key.** The `.env` file should be in `.gitignore`.
 
-### 4. Set Up Supabase Auth
+### 4. Set Up Supabase Auth & Email OTP
 
-1. Go to [Supabase](https://supabase.com/) and create a project.
-2. In Authentication > Settings, add your Site URL (e.g., `http://127.0.0.1:5500`) and Redirect URLs.
-3. Turn on "Confirm email" if you want users to verify their emails.
-4. Update `frontend/config.js` with your `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Guest mode can be toggled by changing `GUEST_MODE`.
+Pixabel uses **Supabase Auth** with email OTP (One-Time Password) verification for a secure, passwordless-confirmed onboarding experience:
+
+1. **Create Supabase Project:**
+   - Go to [Supabase](https://supabase.com/) and create a project.
+   - Under **Project Settings > API**, copy your **Project URL** and **anon / public key**.
+   - Update `frontend/config.js` with `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Guest mode can be toggled via `GUEST_MODE`.
+
+2. **Configure Email Confirmation & Custom SMTP:**
+   - In Supabase Dashboard, go to **Authentication > Providers > Email**.
+   - Turn **Confirm email** **ON**.
+   - **SMTP Requirement:** Supabase's default built-in email service is strictly rate-limited (approximately 3-4 emails per hour across all users for testing). For reliable OTP delivery and production use, configure a custom SMTP provider (e.g., [Resend](https://resend.com/), SendGrid, Amazon SES, or Brevo) under **Project Settings > Authentication > SMTP Settings**.
+
+3. **Configure the Confirm Signup Email Template (`{{ .Token }}`):**
+   - Go to **Authentication > Email Templates > Confirm signup**.
+   - Replace the magic link button with the OTP code token variable `{{ .Token }}`.
+   - Example template body:
+     ```html
+     <h2>Confirm your Pixabel account</h2>
+     <p>Enter the following verification code to complete your registration:</p>
+     <h1 style="letter-spacing: 6px; font-size: 32px; font-family: monospace; color: #d4af37;">{{ .Token }}</h1>
+     <p>This code will expire shortly. If you did not request this, you can safely ignore this email.</p>
+     ```
+
+4. **Match `OTP_LENGTH` Setting:**
+   - In Supabase under **Authentication > Providers > Email**, check **Email OTP Length** (set to `8` by default to match your Supabase project).
+   - In `frontend/config.js`, `const OTP_LENGTH = 8;` dynamically generates 8 boxes with auto-advance, backspace, paste, and auto-submit.
+
+5. **How the Verify & Resend Flow Works:**
+   - **Sign-Up Submission:** Validates full name, username (`3-20` lowercase letters, numbers, underscore), email format, password (`>= 8` characters), password confirmation, and terms acceptance. On submit, calls `supabase.auth.signUp({ email, password, options: { data: { full_name, username } } })` (without `emailRedirectTo`).
+   - **Existing Account Detection:** If an email is already registered, Supabase returns a fake user with an empty `identities` array (`identities.length === 0`). Pixabel detects this and prompts: *"An account with this email already exists. Try signing in."* without exposing the verification screen.
+   - **Interactive OTP Screen:** Replaces the form with a luxury-styled "Verify your email" panel showing the masked email (`p****@gmail.com`). Separate boxes are rendered with `inputmode="numeric"`, `autocomplete="one-time-code"`, auto-advance on typing, backspace backwards navigation, keyboard arrow navigation, paste handling, and auto-submit on completion.
+   - **Code Verification:** Calls `supabase.auth.verifyOtp({ email, token, type: 'signup' })`. Upon success, the session is created, a success indicator is shown, and the user is redirected to `index.html`.
+   - **Resend & Rate Limiting:**
+     - Resend button calls `supabase.auth.resend({ type: 'signup', email })` with a visible 60-second countdown (`Resend in 42s`).
+     - Maximum 5 resends per session; once reached, displays *"Too many requests. Please wait a few minutes."*
+     - After 5 wrong code attempts, the client locks the Verify button for 60 seconds with an active countdown timer.
+     - Incorrect code, expired code, rate limits, and network errors are mapped to user-friendly notices. Code boxes are cleared and refocused after an incorrect code.
+   - **State Persistence & Unconfirmed Sign-in:**
+     - The pending email is saved in `sessionStorage` (never passwords or codes), preserving the OTP screen across page refreshes until verified or dismissed via *"Use a different email"*.
+     - Attempting to sign in with an unconfirmed account (`email_not_confirmed`) automatically triggers a code resend, opens the OTP screen with *"Please verify your email to continue."*, and logs the user in upon verification without password re-entry.
+
 
 ### 5. Start the Flask Server
 
