@@ -1,0 +1,612 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { editImage } from '../lib/api';
+import { downloadImageFile } from '../lib/download';
+import { useToast } from './Toast';
+import './EditTab.css';
+
+const EDIT_MODEL_OPTIONS = [
+  { value: 'kontext', label: 'FLUX Kontext (best for edits)' },
+  { value: 'qwen-edit', label: 'Qwen Image Edit' },
+];
+
+const PRESET_CHIPS = [
+  'Remove background',
+  'Make it night time',
+  'Anime style',
+  'Add snow',
+  'Change to black and white',
+];
+
+const DEFAULT_BASE_EDITS = {
+  brightness: 100,
+  contrast: 100,
+  saturation: 100,
+  blur: 0,
+  grayscale: false,
+  sepia: false,
+  invert: false,
+  rotation: 0,
+  flipH: 1,
+  flipV: 1,
+};
+
+export function EditTab({
+  initialRecord,
+  onSaveToGallery,
+}) {
+  const [sourceImage, setSourceImage] = useState(null);
+  const [originalImageSrc, setOriginalImageSrc] = useState(null);
+  const [parentId, setParentId] = useState(null);
+  const [editHistory, setEditHistory] = useState([]);
+  const [baseEdits, setBaseEdits] = useState(DEFAULT_BASE_EDITS);
+
+  // AI Edit form state
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [selectedModel, setSelectedModel] = useState('kontext');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // Compare overlay
+  const [isComparing, setIsComparing] = useState(false);
+
+  // Drag over state
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const { showToast } = useToast();
+
+  const canvasRef = useRef(null);
+  const dropZoneRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Load an image into the editor
+  const loadImage = useCallback((src, recId = null) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      setSourceImage(img);
+      setOriginalImageSrc(src);
+      setParentId(recId);
+      setEditHistory([src]);
+      setBaseEdits(DEFAULT_BASE_EDITS);
+    };
+    img.src = src;
+  }, []);
+
+  // Check for initial record passed via props
+  useEffect(() => {
+    if (initialRecord && initialRecord.image) {
+      loadImage(initialRecord.image, initialRecord.id);
+    }
+  }, [initialRecord, loadImage]);
+
+  // Redraw canvas whenever sourceImage, baseEdits or container size changes
+  const drawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const dropZone = dropZoneRef.current;
+    if (!canvas || !dropZone || !sourceImage) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rad = (baseEdits.rotation * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(rad));
+    const sin = Math.abs(Math.sin(rad));
+    const w = sourceImage.width * cos + sourceImage.height * sin;
+    const h = sourceImage.width * sin + sourceImage.height * cos;
+
+    const containerW = Math.max(dropZone.clientWidth - 48, 200);
+    const containerH = Math.max(dropZone.clientHeight - 48, 200);
+
+    let scale = Math.min(containerW / w, containerH / h);
+    if (scale > 1) scale = 1;
+
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(rad);
+    ctx.scale(baseEdits.flipH * scale, baseEdits.flipV * scale);
+
+    let filterStr = `brightness(${baseEdits.brightness}%) contrast(${baseEdits.contrast}%) saturate(${baseEdits.saturation}%) blur(${baseEdits.blur}px)`;
+    if (baseEdits.grayscale) filterStr += ' grayscale(100%)';
+    if (baseEdits.sepia) filterStr += ' sepia(100%)';
+    if (baseEdits.invert) filterStr += ' invert(100%)';
+    ctx.filter = filterStr;
+
+    ctx.drawImage(sourceImage, -sourceImage.width / 2, -sourceImage.height / 2);
+    ctx.restore();
+  }, [sourceImage, baseEdits]);
+
+  useEffect(() => {
+    drawCanvas();
+  }, [drawCanvas]);
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => drawCanvas();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [drawCanvas]);
+
+  // File handling
+  const handleFile = (file) => {
+    if (!file) return;
+    if (!file.type.match(/image\/(png|jpeg|webp)/)) {
+      showToast('Invalid file format. Please upload PNG, JPEG, or WEBP.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      showToast('File is too large (max 8MB).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        loadImage(e.target.result);
+        showToast('Image loaded');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Drag & drop handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  // Reset basic edits
+  const handleReset = () => {
+    setBaseEdits(DEFAULT_BASE_EDITS);
+    showToast('Adjustments reset');
+  };
+
+  // Undo last AI edit
+  const handleUndo = () => {
+    if (editHistory.length > 1) {
+      const nextHistory = [...editHistory];
+      nextHistory.pop();
+      const lastState = nextHistory[nextHistory.length - 1];
+      const img = new Image();
+      img.onload = () => {
+        setSourceImage(img);
+        setEditHistory(nextHistory);
+        setBaseEdits(DEFAULT_BASE_EDITS);
+        showToast('Undone to previous state');
+      };
+      img.src = lastState;
+    }
+  };
+
+  // AI Edit Apply
+  const handleApplyAiEdit = async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt || !sourceImage || isAiLoading) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dataUrl = canvas.toDataURL('image/png');
+    setIsAiLoading(true);
+
+    try {
+      const res = await editImage({
+        image: dataUrl,
+        prompt,
+        model: selectedModel,
+      });
+
+      const newImg = new Image();
+      newImg.onload = () => {
+        setSourceImage(newImg);
+        setBaseEdits(DEFAULT_BASE_EDITS);
+        setEditHistory((prev) => {
+          const updated = [...prev, res.image];
+          return updated.slice(-10); // Keep max 10
+        });
+        showToast('AI Edit applied successfully!');
+      };
+      newImg.src = res.image;
+    } catch (err) {
+      showToast(err.message || 'AI Edit failed. Please try again.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // Save to Gallery
+  const handleSaveToGallery = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const prompt = aiPrompt.trim() || 'Edited Image';
+
+    if (onSaveToGallery) {
+      await onSaveToGallery({
+        image: dataUrl,
+        prompt,
+        model: selectedModel,
+        type: 'edit',
+        parentId,
+        editPrompt: aiPrompt.trim() || undefined,
+      });
+      showToast('Saved to gallery successfully!');
+    }
+  };
+
+  // Download Image
+  const handleDownload = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL('image/png');
+    downloadImageFile(dataUrl, aiPrompt.trim() || 'Edited_Image', showToast);
+  };
+
+  const hasImage = Boolean(sourceImage);
+
+  return (
+    <div className="edit-container">
+      {/* ── Left Canvas Viewport ── */}
+      <div className="edit-left">
+        <div
+          ref={dropZoneRef}
+          className={`edit-canvas-wrapper ${isDragOver ? 'drag-over' : ''} ${
+            hasImage ? 'has-image' : ''
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {!hasImage ? (
+            <div className="edit-empty-state">
+              <div className="edit-empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="32" height="32">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                </svg>
+              </div>
+              <p>Drag and drop an image here</p>
+              <span className="or-divider">or</span>
+              <button
+                type="button"
+                className="export-btn primary"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Browse Files
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png, image/jpeg, image/webp"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleFile(e.target.files[0]);
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <canvas ref={canvasRef} className="edit-canvas" />
+
+              {/* Compare Overlay */}
+              {isComparing && originalImageSrc && (
+                <div className="edit-compare-overlay">
+                  <span className="edit-compare-badge">Original</span>
+                  <img src={originalImageSrc} alt="Original comparison preview" />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {hasImage && (
+          <div className="edit-image-actions">
+            <button
+              type="button"
+              className="edit-action-btn"
+              title="Undo last change"
+              disabled={editHistory.length <= 1 || isAiLoading}
+              onClick={handleUndo}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+              </svg>
+              <span>Undo</span>
+            </button>
+
+            <button
+              type="button"
+              className="edit-action-btn"
+              title="Reset all basic adjustments"
+              disabled={isAiLoading}
+              onClick={handleReset}
+            >
+              Reset
+            </button>
+
+            <button
+              type="button"
+              className={`edit-action-btn ${isComparing ? 'active' : ''}`}
+              title="Hold or click to compare original"
+              onMouseDown={() => setIsComparing(true)}
+              onMouseUp={() => setIsComparing(false)}
+              onMouseLeave={() => setIsComparing(false)}
+              onTouchStart={() => setIsComparing(true)}
+              onTouchEnd={() => setIsComparing(false)}
+            >
+              Compare (Hold)
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Right Controls Panel ── */}
+      <div className="edit-right">
+        {/* AI Magic Edit */}
+        <div className="edit-section">
+          <h3 className="edit-section-title">AI Magic Edit</h3>
+
+          <div className="edit-field">
+            <label>Describe the change</label>
+            <textarea
+              className="edit-prompt-input"
+              rows={2}
+              placeholder="e.g. make the sky sunset orange, add sunglasses..."
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              disabled={!hasImage || isAiLoading}
+            />
+          </div>
+
+          <div className="edit-field">
+            <label>Edit Model</label>
+            <select
+              className="edit-model-select"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={!hasImage || isAiLoading}
+            >
+              {EDIT_MODEL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="edit-chips">
+            {PRESET_CHIPS.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                className="edit-chip"
+                disabled={!hasImage || isAiLoading}
+                onClick={() => setAiPrompt(chip)}
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="export-btn primary w-full"
+            style={{ width: '100%', marginTop: '4px' }}
+            disabled={!hasImage || isAiLoading || !aiPrompt.trim()}
+            onClick={handleApplyAiEdit}
+          >
+            {isAiLoading ? 'Applying AI Edit…' : 'Apply AI Edit'}
+          </button>
+
+          {isAiLoading && (
+            <div className="edit-loading-indicator">
+              <div className="edit-spinner" />
+              <span>Editing... this can take 20–40s</span>
+            </div>
+          )}
+        </div>
+
+        {/* Basic Tools */}
+        <div className="edit-section">
+          <h3 className="edit-section-title">Basic Tools</h3>
+
+          <div className="basic-tools-row">
+            <button
+              type="button"
+              className="tool-btn"
+              title="Rotate Left (-90°)"
+              disabled={!hasImage || isAiLoading}
+              onClick={() =>
+                setBaseEdits((prev) => ({
+                  ...prev,
+                  rotation: (prev.rotation - 90 + 360) % 360,
+                }))
+              }
+            >
+              ↺
+            </button>
+            <button
+              type="button"
+              className="tool-btn"
+              title="Rotate Right (+90°)"
+              disabled={!hasImage || isAiLoading}
+              onClick={() =>
+                setBaseEdits((prev) => ({
+                  ...prev,
+                  rotation: (prev.rotation + 90) % 360,
+                }))
+              }
+            >
+              ↻
+            </button>
+            <button
+              type="button"
+              className="tool-btn"
+              title="Flip Horizontal"
+              disabled={!hasImage || isAiLoading}
+              onClick={() =>
+                setBaseEdits((prev) => ({
+                  ...prev,
+                  flipH: prev.flipH * -1,
+                }))
+              }
+            >
+              ↔
+            </button>
+            <button
+              type="button"
+              className="tool-btn"
+              title="Flip Vertical"
+              disabled={!hasImage || isAiLoading}
+              onClick={() =>
+                setBaseEdits((prev) => ({
+                  ...prev,
+                  flipV: prev.flipV * -1,
+                }))
+              }
+            >
+              ↕
+            </button>
+          </div>
+
+          <div className="slider-group">
+            <label>
+              <span>Brightness</span>
+              <span>{baseEdits.brightness}%</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={baseEdits.brightness}
+              disabled={!hasImage || isAiLoading}
+              onChange={(e) =>
+                setBaseEdits((prev) => ({ ...prev, brightness: Number(e.target.value) }))
+              }
+            />
+          </div>
+
+          <div className="slider-group">
+            <label>
+              <span>Contrast</span>
+              <span>{baseEdits.contrast}%</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={baseEdits.contrast}
+              disabled={!hasImage || isAiLoading}
+              onChange={(e) =>
+                setBaseEdits((prev) => ({ ...prev, contrast: Number(e.target.value) }))
+              }
+            />
+          </div>
+
+          <div className="slider-group">
+            <label>
+              <span>Saturation</span>
+              <span>{baseEdits.saturation}%</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={baseEdits.saturation}
+              disabled={!hasImage || isAiLoading}
+              onChange={(e) =>
+                setBaseEdits((prev) => ({ ...prev, saturation: Number(e.target.value) }))
+              }
+            />
+          </div>
+
+          <div className="slider-group">
+            <label>
+              <span>Blur</span>
+              <span>{baseEdits.blur}px</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="20"
+              value={baseEdits.blur}
+              disabled={!hasImage || isAiLoading}
+              onChange={(e) =>
+                setBaseEdits((prev) => ({ ...prev, blur: Number(e.target.value) }))
+              }
+            />
+          </div>
+
+          <div className="filter-buttons">
+            <button
+              type="button"
+              className={`filter-btn ${baseEdits.grayscale ? 'active' : ''}`}
+              disabled={!hasImage || isAiLoading}
+              onClick={() =>
+                setBaseEdits((prev) => ({ ...prev, grayscale: !prev.grayscale }))
+              }
+            >
+              Grayscale
+            </button>
+            <button
+              type="button"
+              className={`filter-btn ${baseEdits.sepia ? 'active' : ''}`}
+              disabled={!hasImage || isAiLoading}
+              onClick={() => setBaseEdits((prev) => ({ ...prev, sepia: !prev.sepia }))}
+            >
+              Sepia
+            </button>
+            <button
+              type="button"
+              className={`filter-btn ${baseEdits.invert ? 'active' : ''}`}
+              disabled={!hasImage || isAiLoading}
+              onClick={() => setBaseEdits((prev) => ({ ...prev, invert: !prev.invert }))}
+            >
+              Invert
+            </button>
+          </div>
+        </div>
+
+        {/* Export */}
+        <div className="edit-section">
+          <h3 className="edit-section-title">Export</h3>
+          <div className="export-buttons">
+            <button
+              type="button"
+              className="export-btn"
+              disabled={!hasImage || isAiLoading}
+              onClick={handleSaveToGallery}
+            >
+              Save to Gallery
+            </button>
+            <button
+              type="button"
+              className="export-btn primary"
+              disabled={!hasImage || isAiLoading}
+              onClick={handleDownload}
+            >
+              Download
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

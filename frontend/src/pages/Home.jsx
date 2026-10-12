@@ -4,6 +4,7 @@ import { Header } from '../components/Header';
 import { ModelPickerModal, MODEL_LABELS } from '../components/Modal';
 import { GenerationShimmer } from '../components/Skeleton';
 import { GalleryTab } from '../components/GalleryTab';
+import { EditTab } from '../components/EditTab';
 import { useGenerations } from '../hooks/useGenerations';
 import { useToast } from '../components/Toast';
 import { generateImage, getBackendStatus } from '../lib/api';
@@ -851,9 +852,14 @@ export function Home() {
           )}
 
           {activeTab === 'edit' && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <p style={{ color: 'var(--text-muted)' }}>Edit tab will be rendered in Stage 4.</p>
-            </div>
+            <EditTab
+              initialRecord={
+                searchParams.get('img')
+                  ? generations.find((g) => String(g.id) === String(searchParams.get('img')))
+                  : null
+              }
+              onSaveToGallery={addGeneration}
+            />
           )}
         </main>
       </div>
