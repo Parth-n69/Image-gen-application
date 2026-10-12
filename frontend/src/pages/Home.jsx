@@ -3,10 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { ModelPickerModal, MODEL_LABELS } from '../components/Modal';
 import { GenerationShimmer } from '../components/Skeleton';
+import { GalleryTab } from '../components/GalleryTab';
 import { useGenerations } from '../hooks/useGenerations';
 import { useToast } from '../components/Toast';
 import { generateImage, getBackendStatus } from '../lib/api';
 import { autocorrectLastWord } from '../lib/autocorrect';
+import { downloadImageFile } from '../lib/download';
 import './Home.css';
 
 const PRESET_PROMPTS = [
@@ -54,48 +56,17 @@ function formatTime(ts) {
   return d.toLocaleDateString();
 }
 
-function downloadImageFile(dataUri, promptText, onToast) {
-  if (!dataUri) return;
-  const safeName =
-    (promptText || 'Pixabel_image')
-      .replace(/[^a-zA-Z0-9 ]/g, '')
-      .replace(/\s+/g, '_')
-      .slice(0, 60) || 'Pixabel_image';
-  const fileName = `Pixabel_${safeName}.png`;
-
-  if (dataUri.startsWith('data:')) {
-    const byteString = atob(dataUri.split(',')[1]);
-    const mimeString = dataUri.split(',')[0].split(':')[1].split(';')[0];
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    const blob = new Blob([ab], { type: mimeString });
-    const blobUrl = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-  } else {
-    const link = document.createElement('a');
-    link.href = dataUri;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-  if (onToast) onToast('Image downloaded successfully!');
-}
-
 export function Home() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'generate';
-  const { generations, addGeneration, totalCount } = useGenerations();
+  const {
+    generations,
+    addGeneration,
+    removeGeneration,
+    toggleFav,
+    clearGenerations,
+    totalCount,
+  } = useGenerations();
   const { showToast, showAutocorrect } = useToast();
 
   // Navigation tab change
@@ -217,6 +188,45 @@ export function Home() {
     ]);
     setIsChatActive(true);
     setSidebarOpen(false);
+  };
+
+  // Reuse settings from gallery or history
+  const handleReuseSettings = (record) => {
+    setSearchParams({ tab: 'generate' });
+    setPromptText(record.prompt || '');
+    if (record.model) {
+      setSelectedModel(record.model);
+    }
+    if (record.style) {
+      setActiveStyle(record.style);
+    }
+    if (record.width && record.height) {
+      setActiveRatio(`${record.width}x${record.height}`);
+    }
+    if (record.negativePrompt !== undefined) {
+      setNegativePrompt(record.negativePrompt);
+    }
+    const hasCustomSettings =
+      (record.style && record.style !== 'none') ||
+      Boolean(record.negativePrompt) ||
+      (record.width && record.height && `${record.width}x${record.height}` !== '1024x1024');
+    if (hasCustomSettings) {
+      setIsOptionsOpen(true);
+    }
+    setIsChatActive(false);
+    setMessages([]);
+    setTimeout(() => {
+      if (promptInputRef.current) {
+        promptInputRef.current.style.height = 'auto';
+        promptInputRef.current.style.height = Math.min(promptInputRef.current.scrollHeight, 150) + 'px';
+        promptInputRef.current.focus();
+      }
+    }, 50);
+  };
+
+  // Switch to Edit tab with selected record
+  const handleEditImage = (record) => {
+    setSearchParams({ tab: 'edit', img: record.id || '' });
   };
 
   // Core Generation Function
@@ -829,9 +839,15 @@ export function Home() {
           )}
 
           {activeTab === 'gallery' && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <p style={{ color: 'var(--text-muted)' }}>Gallery tab will be rendered in Stage 3.</p>
-            </div>
+            <GalleryTab
+              generations={generations}
+              onToggleFavorite={toggleFav}
+              onDeleteGeneration={removeGeneration}
+              onClearAllGenerations={clearGenerations}
+              onReuseSettings={handleReuseSettings}
+              onEditImage={handleEditImage}
+              onNavigateGenerate={() => handleTabChange('generate')}
+            />
           )}
 
           {activeTab === 'edit' && (

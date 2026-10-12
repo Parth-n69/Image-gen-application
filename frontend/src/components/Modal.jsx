@@ -170,3 +170,160 @@ export function ConfirmDialog({
     </Modal>
   );
 }
+
+export function LightboxModal({
+  isOpen,
+  onClose,
+  record,
+  onToggleFavorite,
+  onReuseSettings,
+  onEditImage,
+  onDelete,
+  onDownload,
+}) {
+  if (!isOpen || !record) return null;
+
+  const modelLabel = MODEL_LABELS[record.model] || record.model || 'Unknown';
+  const styleLabel = record.style && record.style !== 'none' ? record.style : 'None';
+  const sizeLabel = `${record.width || 1024} × ${record.height || 1024}`;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} className="lightbox-modal">
+      <button
+        type="button"
+        className="lightbox-close"
+        onClick={onClose}
+        aria-label="Close lightbox"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+
+      <div className="lightbox-content">
+        <div className="lightbox-image-wrap">
+          <img src={record.image} alt={record.prompt || 'Generated preview'} />
+        </div>
+
+        <div className="lightbox-details">
+          <div className="lightbox-detail-section">
+            <div className="lightbox-detail-label">Prompt</div>
+            <div className="lightbox-detail-value">{record.prompt}</div>
+          </div>
+
+          {record.type === 'edit' && record.editPrompt && (
+            <div className="lightbox-detail-section">
+              <div className="lightbox-detail-label">Edit Prompt</div>
+              <div className="lightbox-detail-value">{record.editPrompt}</div>
+            </div>
+          )}
+
+          {record.negativePrompt && (
+            <div className="lightbox-detail-section">
+              <div className="lightbox-detail-label">Negative Prompt</div>
+              <div className="lightbox-detail-value">{record.negativePrompt}</div>
+            </div>
+          )}
+
+          <div className="lightbox-detail-row">
+            <div className="lightbox-detail-section">
+              <div className="lightbox-detail-label">Model</div>
+              <div className="lightbox-detail-value">{modelLabel}</div>
+            </div>
+            <div className="lightbox-detail-section">
+              <div className="lightbox-detail-label">Style</div>
+              <div className="lightbox-detail-value">{styleLabel}</div>
+            </div>
+            <div className="lightbox-detail-section">
+              <div className="lightbox-detail-label">Size</div>
+              <div className="lightbox-detail-value">{sizeLabel}</div>
+            </div>
+          </div>
+
+          <div className="lightbox-actions">
+            {onReuseSettings && (
+              <button
+                type="button"
+                className="lightbox-action-btn primary"
+                onClick={() => {
+                  onReuseSettings(record);
+                  onClose();
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                </svg>
+                <span>Reuse Settings</span>
+              </button>
+            )}
+
+            {onDownload && (
+              <button
+                type="button"
+                className="lightbox-action-btn"
+                onClick={() => onDownload(record)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <span>Download</span>
+              </button>
+            )}
+
+            {onToggleFavorite && (
+              <button
+                type="button"
+                className={`lightbox-action-btn ${record.favorite ? 'active' : ''}`}
+                onClick={() => onToggleFavorite(record.id)}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill={record.favorite ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  width="14"
+                  height="14"
+                >
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+                <span>{record.favorite ? 'Favorited' : 'Favorite'}</span>
+              </button>
+            )}
+
+            {onEditImage && (
+              <button
+                type="button"
+                className="lightbox-action-btn"
+                onClick={() => {
+                  onEditImage(record);
+                  onClose();
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                  <path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                </svg>
+                <span>Edit this image</span>
+              </button>
+            )}
+
+            {onDelete && (
+              <button
+                type="button"
+                className="lightbox-action-btn danger"
+                onClick={() => onDelete(record)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                </svg>
+                <span>Delete</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+

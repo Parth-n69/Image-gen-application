@@ -320,9 +320,22 @@
   color: var(--gold);
 }
 
+.lightbox-action-btn.primary {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
+}
+
+.lightbox-action-btn.primary:hover {
+  background: var(--gold-hover);
+  border-color: var(--gold-hover);
+  box-shadow: var(--glow);
+  transform: translateY(-1px);
+}
+
 .lightbox-action-btn.active {
-  color: var(--fav-color);
-  border-color: var(--fav-color);
+  color: var(--gold);
+  border-color: var(--gold);
   background: rgba(212, 175, 55, 0.08);
 }
 
