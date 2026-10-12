@@ -1,0 +1,411 @@
+/* ============================================================
+   MODALS, LIGHTBOX & CONFIRM DIALOGS
+   ============================================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease;
+  padding: 16px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Standard / Model Picker Modal ── */
+.model-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 90%;
+  max-width: 520px;
+  box-shadow: var(--shadow);
+  animation: modalIn 0.4s var(--ease);
+  overflow: hidden;
+}
+
+.model-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-modal-header h3 {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.model-modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all var(--t-fast);
+}
+
+.model-modal-close:hover {
+  color: var(--text);
+}
+
+.model-modal-grid {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--t-smooth);
+  text-align: left;
+  font-family: var(--font-sans);
+  position: relative;
+  width: 100%;
+}
+
+.model-card:hover {
+  background: rgba(212, 175, 55, 0.04);
+  border-color: var(--border);
+}
+
+.model-card.active {
+  background: rgba(212, 175, 55, 0.06);
+  border-color: var(--gold);
+}
+
+.model-card.active:hover {
+  background: rgba(212, 175, 55, 0.08);
+}
+
+.model-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+.model-card.active .model-card-icon {
+  background: rgba(212, 175, 55, 0.08);
+  border-color: var(--gold);
+}
+
+.model-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-card-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.model-card-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.model-card-badge {
+  font-size: 0.62rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(212, 175, 55, 0.08);
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  color: var(--gold-soft);
+  flex-shrink: 0;
+}
+
+.model-card-badge.fast {
+  background: rgba(111, 174, 138, 0.1);
+  border-color: rgba(111, 174, 138, 0.2);
+  color: var(--success);
+}
+
+.model-card-badge.quality {
+  background: rgba(212, 175, 55, 0.1);
+  border-color: rgba(212, 175, 55, 0.25);
+  color: var(--gold);
+}
+
+/* ── Lightbox Modal ── */
+.lightbox-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-width: 900px;
+  width: 100%;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  position: relative;
+  animation: modalIn 0.4s var(--ease);
+  box-shadow: var(--shadow);
+}
+
+.lightbox-modal::-webkit-scrollbar {
+  width: 4px;
+}
+.lightbox-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+.lightbox-modal::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all var(--t-fast);
+  z-index: 10;
+}
+
+.lightbox-close:hover {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+
+.lightbox-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.lightbox-image-wrap {
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: 16px;
+}
+
+.lightbox-image-wrap img {
+  max-width: 100%;
+  max-height: 60vh;
+  display: block;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+
+.lightbox-details {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lightbox-prompt {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: var(--text);
+  font-style: italic;
+}
+
+.lightbox-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lightbox-detail-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.lightbox-detail-value {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.lightbox-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.lightbox-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.lightbox-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+
+.lightbox-action-btn:hover {
+  background: rgba(212, 175, 55, 0.04);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.lightbox-action-btn.active {
+  color: var(--fav-color);
+  border-color: var(--fav-color);
+  background: rgba(212, 175, 55, 0.08);
+}
+
+.lightbox-action-btn.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(199, 92, 92, 0.06);
+}
+
+/* ── Confirm Dialog ── */
+.confirm-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  animation: modalIn 0.4s var(--ease);
+  box-shadow: var(--shadow);
+}
+
+.confirm-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius);
+  background: rgba(199, 92, 92, 0.08);
+  border: 1px solid rgba(199, 92, 92, 0.15);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 18px;
+  color: var(--danger);
+}
+
+.confirm-dialog h3 {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.confirm-dialog p {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.confirm-extra {
+  margin-bottom: 16px;
+}
+
+.confirm-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  transition: all var(--t-fast);
+}
+
+.confirm-checkbox-label:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .model-modal,
+  .lightbox-modal,
+  .confirm-dialog {
+    animation: none;
+  }
+}

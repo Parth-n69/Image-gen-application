@@ -11,7 +11,16 @@ from huggingface_hub import InferenceClient
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+prod_origin = os.getenv("FRONTEND_URL")
+if prod_origin:
+    allowed_origins.extend([u.strip() for u in prod_origin.split(",") if u.strip()])
+
+CORS(app, origins=allowed_origins)
 
 HF_API_KEY = os.getenv("HF_API_KEY")
 

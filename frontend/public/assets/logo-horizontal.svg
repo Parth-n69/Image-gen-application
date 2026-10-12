@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" width="200" height="48">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600&amp;family=Inter:wght@500&amp;display=swap');
+      .title { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 600; fill: #f2efe9; letter-spacing: 0.06em; }
+      .accent { fill: #c9a96e; }
+      .tagline { font-family: 'Inter', sans-serif; font-size: 9px; font-weight: 500; fill: #8f8a80; letter-spacing: 0.3em; text-transform: uppercase; }
+    </style>
+  </defs>
+  
+  <!-- Symbol -->
+  <g transform="translate(0, 8)">
+    <rect x="20" y="0" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="20" y="24" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="8" y="12" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="32" y="12" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="14" y="6" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="26" y="6" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="14" y="18" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="26" y="18" width="6" height="6" fill="none" stroke="#d4af37" stroke-width="1.2" />
+    <rect x="20" y="6" width="6" height="6" fill="#d4af37" />
+    <rect x="20" y="18" width="6" height="6" fill="#d4af37" />
+    <rect x="14" y="12" width="6" height="6" fill="#d4af37" />
+    <rect x="26" y="12" width="6" height="6" fill="#d4af37" />
+    <rect x="20" y="12" width="6" height="6" fill="#d4af37" />
+  </g>
+
+  <!-- Wordmark -->
+  <text x="50" y="24" class="title">Pi<tspan class="accent">x</tspan>abel</text>
+  <text x="50" y="38" class="tagline">AI IMAGE STUDIO</text>
+</svg>

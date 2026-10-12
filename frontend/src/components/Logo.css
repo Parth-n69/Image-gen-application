@@ -1,0 +1,101 @@
+.logo-lockup-horizontal {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: none;
+}
+
+.logo-title {
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.logo-accent {
+  color: var(--gold-soft);
+}
+
+.logo-full-img {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+}
+
+.logo-full-img-large {
+  height: 64px;
+  width: auto;
+  object-fit: contain;
+  border-radius: var(--radius);
+}
+
+.logo-full-img-xl {
+  height: 96px;
+  width: auto;
+  object-fit: contain;
+  border-radius: var(--radius);
+}
+
+/* Stacked Lockup for Modals and Brand Panel */
+.logo-lockup-stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+  user-select: none;
+}
+
+/* Symbol Animation (Draw-in/Shimmer) */
+@keyframes drawInShimmer {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: brightness(0.5);
+  }
+  50% {
+    filter: brightness(1.2) drop-shadow(0 0 8px var(--gold));
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.logo-shimmer-anim {
+  animation: drawInShimmer 1.2s var(--ease) forwards;
+}
+
+@keyframes pulseOpacity {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 0 12px var(--gold-soft));
+  }
+}
+
+.loader-pulse-anim {
+  animation: pulseOpacity 2s infinite var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-shimmer-anim,
+  .loader-pulse-anim {
+    animation: none;
+  }
+}
