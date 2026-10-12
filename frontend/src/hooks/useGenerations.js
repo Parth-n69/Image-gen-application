@@ -7,7 +7,6 @@ export function useGenerations() {
 
   const refreshGenerations = useCallback(async () => {
     try {
-      setLoading(true);
       const records = await Storage.getAllGenerations();
       setGenerations(records);
     } catch (err) {

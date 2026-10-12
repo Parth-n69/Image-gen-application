@@ -121,8 +121,26 @@ export function Home() {
   }, []);
 
   useEffect(() => {
-    refreshCredits();
-  }, [refreshCredits]);
+    let active = true;
+    getBackendStatus()
+      .then((data) => {
+        if (active) {
+          setCredits({
+            remaining: data.remaining ?? 4,
+            dailyLimit: data.daily_limit ?? 4,
+            status: 'ok',
+          });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCredits((prev) => ({ ...prev, status: 'offline' }));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Scroll to bottom on new messages
   useEffect(() => {

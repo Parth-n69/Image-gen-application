@@ -120,21 +120,72 @@ export function Profile() {
   }, []);
 
   useEffect(() => {
-    loadStats();
-  }, [loadStats]);
+    let active = true;
+    Storage.getAllGenerations().then((records) => {
+      if (!active) return;
+      if (!records || records.length === 0) {
+        setStats({
+          total: 0,
+          favorites: 0,
+          edits: 0,
+          topModel: '-',
+          topStyle: '-',
+          lastGenerated: '-',
+        });
+        return;
+      }
+
+      let favCount = 0;
+      let editCount = 0;
+      const modelCounts = {};
+      const styleCounts = {};
+
+      records.forEach((r) => {
+        if (r.favorite) favCount++;
+        if (r.type === 'edit') editCount++;
+
+        const m = r.model || 'unknown';
+        modelCounts[m] = (modelCounts[m] || 0) + 1;
+
+        const s = r.style || 'none';
+        styleCounts[s] = (styleCounts[s] || 0) + 1;
+      });
+
+      const topModelKey = Object.keys(modelCounts).sort(
+        (a, b) => modelCounts[b] - modelCounts[a]
+      )[0];
+      const topStyleKey = Object.keys(styleCounts).sort(
+        (a, b) => styleCounts[b] - styleCounts[a]
+      )[0];
+
+      const lastDate = records[0]?.createdAt
+        ? new Date(records[0].createdAt).toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          })
+        : '-';
+
+      setStats({
+        total: records.length,
+        favorites: favCount,
+        edits: editCount,
+        topModel: MODEL_LABELS[topModelKey] || topModelKey || '-',
+        topStyle: topStyleKey === 'none' ? 'None' : topStyleKey || '-',
+        lastGenerated: lastDate,
+      });
+    }).catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // ── Account Tab State ──
   const [fullName, setFullName] = useState(() => user?.user_metadata?.full_name || '');
   const [username, setUsername] = useState(() => user?.user_metadata?.username || '');
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountError, setAccountError] = useState('');
-
-  useEffect(() => {
-    if (user?.user_metadata) {
-      setFullName(user.user_metadata.full_name || '');
-      setUsername(user.user_metadata.username || '');
-    }
-  }, [user]);
 
   const hasAccountChanges = useMemo(() => {
     const origName = user?.user_metadata?.full_name || '';

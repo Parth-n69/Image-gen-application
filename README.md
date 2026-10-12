@@ -35,7 +35,6 @@ image-gen-model/
 │   ├── vercel.json             # SPA production rewrite configuration
 │   ├── vite.config.js          # Vite config (port 5173)
 │   └── package.json            # React & Vite dependencies
-├── frontend-legacy/            # Preserved legacy vanilla implementation reference
 └── README.md
 ```
 
