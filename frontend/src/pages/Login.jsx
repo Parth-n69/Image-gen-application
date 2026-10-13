@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, SKIP_EMAIL_CONFIRM } from '../context/AuthContext';
 import { supabase, GUEST_MODE_ENABLED, OTP_LENGTH } from '../lib/supabase';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
@@ -322,6 +322,12 @@ export function Login() {
 
     // If auto-confirm is enabled, session exists
     if (data?.session) {
+      navigate('/');
+      return;
+    }
+
+    // TEST MODE: skip OTP screen entirely
+    if (SKIP_EMAIL_CONFIRM) {
       navigate('/');
       return;
     }

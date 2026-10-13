@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
+// ── TEST MODE: Set to true to skip email confirmation / OTP ──
+export const SKIP_EMAIL_CONFIRM = true;
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -55,10 +58,12 @@ export function AuthProvider({ children }) {
     });
 
     if (error) {
-      const isUnconfirmed =
-        error.code === 'email_not_confirmed' ||
-        error.message?.toLowerCase().includes('email not confirmed') ||
-        error.message?.toLowerCase().includes('email address is not confirmed');
+      // When SKIP_EMAIL_CONFIRM is on, don't redirect to OTP
+      const isUnconfirmed = SKIP_EMAIL_CONFIRM
+        ? false
+        : error.code === 'email_not_confirmed' ||
+          error.message?.toLowerCase().includes('email not confirmed') ||
+          error.message?.toLowerCase().includes('email address is not confirmed');
 
       if (isUnconfirmed) {
         try {
@@ -100,6 +105,21 @@ export function AuthProvider({ children }) {
           code: 'user_already_exists',
         },
       };
+    }
+
+    // TEST MODE: Auto sign-in right after signup to skip email verification
+    if (SKIP_EMAIL_CONFIRM && !data?.session) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (!signInError && signInData?.session) {
+        setIsGuest(false);
+        sessionStorage.removeItem('guest_mode');
+        return { data: signInData, error: null };
+      }
+      // If auto sign-in fails (e.g. Supabase still requires confirmation),
+      // fall through to the normal flow
     }
 
     if (data?.session) {
