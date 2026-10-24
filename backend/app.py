@@ -7,16 +7,11 @@ from datetime import date
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from huggingface_hub import InferenceClient
-
 from models_config import (
     CLOUDFLARE_MODELS,
-    HUGGINGFACE_MODELS,
-    EDIT_MODELS,
     DEFAULT_MODEL,
 )
 from providers import cloudflare as cf_provider
-from providers import huggingface as hf_provider
 
 load_dotenv()
 
@@ -40,19 +35,13 @@ if prod_origin:
 CORS(app, origins=allowed_origins)
 
 # ── Provider credentials ──────────────────────────────────────
-HF_API_KEY = os.getenv("HF_API_KEY")
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 
-# ── Build available model list (hide unconfigured providers) ──
+# ── Build available model list (Cloudflare Workers AI) ────────
 def _build_model_list():
-    """Merge Cloudflare and HuggingFace models, hiding those whose keys are missing."""
-    models = {}
-    if CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN:
-        models.update(CLOUDFLARE_MODELS)
-    if HF_API_KEY:
-        models.update(HUGGINGFACE_MODELS)
-    return models
+    """Return configured Cloudflare Workers AI models."""
+    return dict(CLOUDFLARE_MODELS)
 
 
 ALL_MODELS = _build_model_list()
@@ -95,8 +84,8 @@ def _check_cf_rate(record):
     """
     if record["cf_count"] >= CF_DAILY_LIMIT:
         return False, (
-            f"You've reached the Cloudflare daily limit ({CF_DAILY_LIMIT} images). "
-            "Try a Hugging Face model or come back tomorrow."
+            f"You've reached the daily limit ({CF_DAILY_LIMIT} images). "
+            "Please come back tomorrow."
         )
 
     now = _time.time()
@@ -293,144 +282,14 @@ def generate_image():
 
         return jsonify(response_data), 200
 
-    # ── HUGGING FACE PROVIDER ──────────────────────────────────
-    elif provider == "huggingface":
-        if not HF_API_KEY:
-            return jsonify({"error": "Hugging Face API key is not configured."}), 500
-
-        try:
-            image = hf_provider.generate(
-                api_key=HF_API_KEY,
-                model_id=model_cfg["model_id"],
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                width=width,
-                height=height,
-            )
-        except hf_provider.HuggingFaceError as exc:
-            logger.warning("HF generation failed: %s (code=%s)", str(exc)[:120], exc.code)
-            status_map = {
-                "HF_LOADING": 504,
-                "HF_AUTH": 403,
-                "HF_CREDITS": 402,
-                "HF_NETWORK": 502,
-            }
-            return jsonify({
-                "error": str(exc),
-                "code": exc.code,
-            }), status_map.get(exc.code, 500)
-
-        # Encode to base64
-        try:
-            buf = io.BytesIO()
-            image.save(buf, format="PNG")
-            buf.seek(0)
-            b64_string = base64.b64encode(buf.read()).decode("utf-8")
-            data_uri = f"data:image/png;base64,{b64_string}"
-        except Exception as exc:
-            return jsonify({"error": f"Failed to process the generated image: {str(exc)}"}), 500
-
-        # Increment usage
-        record["count"] += 1
-        remaining = max(0, DAILY_LIMIT - record["count"])
-
-        return jsonify({
-            "image": data_uri,
-            "remaining": remaining,
-            "daily_limit": DAILY_LIMIT,
-            "model": model_key,
-        }), 200
-
     else:
         return jsonify({"error": f"Unknown provider '{provider}'."}), 500
 
 
 @app.route("/edit", methods=["POST"])
 def edit_image():
-    """Edit an image using HF Inference API with provider routing."""
-    data = request.get_json(silent=True)
-    if not data or not data.get("prompt", "").strip():
-        return jsonify({"error": "Prompt is required and cannot be empty."}), 400
-    if not data.get("image"):
-        return jsonify({"error": "Image is required."}), 400
-
-    img_data_str = data["image"]
-    if img_data_str.startswith("data:image"):
-        try:
-            img_data_str = img_data_str.split(",")[1]
-        except IndexError:
-            return jsonify({"error": "Invalid image format."}), 400
-
-    try:
-        img_bytes = base64.b64decode(img_data_str)
-    except Exception:
-        return jsonify({"error": "Invalid base64 image data."}), 400
-
-    if len(img_bytes) > 8 * 1024 * 1024:
-        return jsonify({"error": "Image is too large (max 8 MB)."}), 413
-
-    try:
-        img = Image.open(io.BytesIO(img_bytes))
-        if img.format not in ["PNG", "JPEG", "WEBP"]:
-            return jsonify({"error": f"Image must be PNG, JPEG, or WEBP. Got {img.format}"}), 400
-    except Exception:
-        return jsonify({"error": "Invalid image file."}), 400
-
-    # Resize so longest side <= 1024
-    longest_side = max(img.width, img.height)
-    if longest_side > 1024:
-        ratio = 1024 / longest_side
-        new_w = int(img.width * ratio)
-        new_h = int(img.height * ratio)
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    processed_img_bytes = buf.getvalue()
-
-    prompt = data["prompt"].strip()
-    model_key = data.get("model", "kontext")
-    if model_key not in EDIT_MODELS:
-        model_key = "kontext"
-
-    if not HF_API_KEY:
-        return jsonify({
-            "error": "Hugging Face free credits are used up. Use the free basic tools (rotate, flip, adjust) in the Edit tab.",
-            "code": "HF_CREDITS",
-        }), 402
-
-    primary_model = EDIT_MODELS[model_key]
-    fallback_model_key = "qwen-edit" if model_key == "kontext" else "kontext"
-    fallback_model = EDIT_MODELS[fallback_model_key]
-
-    def try_edit(model_info):
-        client = InferenceClient(provider=model_info["provider"], api_key=HF_API_KEY)
-        return client.image_to_image(processed_img_bytes, prompt=prompt, model=model_info["id"])
-
-    try:
-        result_img = try_edit(primary_model)
-    except Exception as e1:
-        logger.warning("Primary edit failed: %s", str(e1)[:120])
-        try:
-            result_img = try_edit(fallback_model)
-        except Exception as e2:
-            logger.warning("Fallback edit failed: %s", str(e2)[:120])
-            err_str = str(e1).lower() + " " + str(e2).lower()
-            if "401" in err_str or "403" in err_str or "unauthorized" in err_str or "permission" in err_str:
-                return jsonify({"error": "Check your Hugging Face token"}), 401
-            if "402" in err_str or "429" in err_str or "payment" in err_str or "credits" in err_str or "quota" in err_str:
-                return jsonify({
-                    "error": "Hugging Face free credits are used up. Use the free basic tools (rotate, flip, adjust) in the Edit tab.",
-                    "code": "HF_CREDITS",
-                }), 402
-            if "503" in err_str or "timeout" in err_str or "loading" in err_str or "busy" in err_str:
-                return jsonify({"error": "Model is busy, try again"}), 503
-            return jsonify({"error": "Failed to edit image."}), 500
-
-    out_buf = io.BytesIO()
-    result_img.save(out_buf, format="PNG")
-    b64_string = base64.b64encode(out_buf.getvalue()).decode("utf-8")
-    return jsonify({"image": f"data:image/png;base64,{b64_string}"}), 200
+    """Edit/restyle an image using Cloudflare SDXL Lightning img2img."""
+    return restyle_image()
 
 
 @app.route("/restyle", methods=["POST"])

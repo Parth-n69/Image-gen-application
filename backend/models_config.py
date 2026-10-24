@@ -1,5 +1,5 @@
 """
-Centralized model configuration for all providers.
+Centralized model configuration for Cloudflare Workers AI.
 
 Each entry maps a short model key (used by the frontend) to its provider,
 API model identifier, display name, capability flags, and UI badge text.
@@ -35,69 +35,19 @@ CLOUDFLARE_MODELS = {
         "max_steps": 20,
         "note": None,
     },
-}
-
-# ── Hugging Face Inference models ──────────────────────────────
-HUGGINGFACE_MODELS = {
-    "flux-schnell": {
-        "provider": "huggingface",
-        "model_id": "black-forest-labs/FLUX.1-schnell",
-        "name": "FLUX Schnell",
-        "desc": "Lightning-fast generation with remarkable clarity",
-        "badge": "Limited credits",
-        "badge_class": "limited",
-        "icon": "⚡",
-        "supports_negative_prompt": False,
-        "supports_dimensions": True,
-        "note": None,
-    },
-    "flux-dev": {
-        "provider": "huggingface",
-        "model_id": "black-forest-labs/FLUX.1-dev",
-        "name": "FLUX Dev",
-        "desc": "Exceptional detail & prompt adherence for discerning creators",
-        "badge": "Limited credits",
-        "badge_class": "limited",
-        "icon": "✦",
-        "supports_negative_prompt": False,
-        "supports_dimensions": True,
-        "note": None,
-    },
-    "sd3.5": {
-        "provider": "huggingface",
-        "model_id": "stabilityai/stable-diffusion-3.5-large",
-        "name": "Stable Diffusion 3.5",
-        "desc": "Stability AI's flagship for complex composition",
-        "badge": "Limited credits",
-        "badge_class": "limited",
-        "icon": "◈",
-        "supports_negative_prompt": True,
-        "supports_dimensions": True,
-        "note": None,
-    },
-    "sdxl": {
-        "provider": "huggingface",
-        "model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+    "cf-sdxl-base": {
+        "provider": "cloudflare",
+        "model_id": "@cf/stabilityai/stable-diffusion-xl-base-1.0",
         "name": "Stable Diffusion XL",
-        "desc": "Classic high-resolution model with rich aesthetics",
-        "badge": "Limited credits",
-        "badge_class": "limited",
+        "desc": "Classic high-resolution model via Cloudflare Workers AI",
+        "badge": "Free daily",
+        "badge_class": "free",
         "icon": "❖",
         "supports_negative_prompt": True,
         "supports_dimensions": True,
+        "default_steps": 20,
+        "max_steps": 50,
         "note": None,
-    },
-}
-
-# ── Edit models (stay on Hugging Face) ─────────────────────────
-EDIT_MODELS = {
-    "kontext": {
-        "id": "black-forest-labs/FLUX.1-Kontext-dev",
-        "provider": "replicate",
-    },
-    "qwen-edit": {
-        "id": "Qwen/Qwen-Image-Edit",
-        "provider": "fal-ai",
     },
 }
 

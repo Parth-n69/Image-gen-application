@@ -141,7 +141,7 @@ def _classify_error(resp):
     if status == 400 and ("input tensor" in error_text or "3030" in error_text):
         raise CloudflareError(
             "Image-to-image is not available on this model via the REST API. "
-            "Use the basic tools or AI Edit (Hugging Face) instead.",
+            "Use the basic tools or Restyle instead.",
             code="CF_IMG2IMG_UNSUPPORTED",
         )
 

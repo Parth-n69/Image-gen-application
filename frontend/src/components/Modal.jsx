@@ -52,50 +52,20 @@ export const MODEL_OPTIONS = [
     provider: 'cloudflare',
   },
   {
-    key: 'flux-schnell',
-    name: 'FLUX Schnell',
-    desc: 'Lightning-fast generation with remarkable clarity',
-    badge: 'Limited credits',
-    badgeClass: 'limited',
-    icon: '⚡',
-    provider: 'huggingface',
-  },
-  {
-    key: 'flux-dev',
-    name: 'FLUX Dev',
-    desc: 'Exceptional detail & prompt adherence for discerning creators',
-    badge: 'Limited credits',
-    badgeClass: 'limited',
-    icon: '✦',
-    provider: 'huggingface',
-  },
-  {
-    key: 'sd3.5',
-    name: 'Stable Diffusion 3.5',
-    desc: "Stability AI's flagship for complex composition",
-    badge: 'Limited credits',
-    badgeClass: 'limited',
-    icon: '◈',
-    provider: 'huggingface',
-  },
-  {
-    key: 'sdxl',
+    key: 'cf-sdxl-base',
     name: 'Stable Diffusion XL',
-    desc: 'Classic high-resolution model with rich aesthetics',
-    badge: 'Limited credits',
-    badgeClass: 'limited',
+    desc: 'Classic high-resolution model via Cloudflare Workers AI',
+    badge: 'Free daily',
+    badgeClass: 'free',
     icon: '❖',
-    provider: 'huggingface',
+    provider: 'cloudflare',
   },
 ];
 
 export const MODEL_LABELS = {
-  'cf-flux-schnell': 'FLUX.1 Schnell (CF)',
-  'cf-sdxl-lightning': 'SDXL Lightning (CF)',
-  'flux-schnell': 'FLUX Schnell',
-  'flux-dev': 'FLUX Dev',
-  'sd3.5': 'Stable Diffusion 3.5',
-  'sdxl': 'Stable Diffusion XL',
+  'cf-flux-schnell': 'FLUX.1 Schnell',
+  'cf-sdxl-lightning': 'SDXL Lightning',
+  'cf-sdxl-base': 'Stable Diffusion XL',
 };
 
 /**
@@ -117,10 +87,6 @@ export function ModelPickerModal({ isOpen, onClose, selectedModel, onSelectModel
 
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : MODEL_OPTIONS;
 
-  // Group by provider
-  const cfModels = models.filter((m) => m.provider === 'cloudflare');
-  const hfModels = models.filter((m) => m.provider === 'huggingface');
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="model-modal">
       <div className="model-modal-header">
@@ -139,71 +105,33 @@ export function ModelPickerModal({ isOpen, onClose, selectedModel, onSelectModel
       </div>
 
       <div className="model-modal-grid">
-        {cfModels.length > 0 && (
-          <>
-            <div className="model-section-label">Cloudflare Workers AI</div>
-            {cfModels.map((model) => {
-              const key = model.key;
-              const isActive = selectedModel === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`model-card ${isActive ? 'active' : ''}`}
-                  onClick={() => {
-                    onSelectModel(key);
-                    onClose();
-                  }}
-                >
-                  <div className="model-card-icon" aria-hidden="true">
-                    {model.icon}
-                  </div>
-                  <div className="model-card-info">
-                    <div className="model-card-name">{model.name}</div>
-                    <div className="model-card-desc">{model.desc}</div>
-                  </div>
-                  <span className={`model-card-badge ${model.badgeClass || model.badge_class || ''}`}>
-                    {model.badge}
-                  </span>
-                </button>
-              );
-            })}
-          </>
-        )}
-
-        {hfModels.length > 0 && (
-          <>
-            <div className="model-section-label" style={cfModels.length > 0 ? { marginTop: '8px' } : {}}>
-              Hugging Face
-            </div>
-            {hfModels.map((model) => {
-              const key = model.key;
-              const isActive = selectedModel === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`model-card ${isActive ? 'active' : ''}`}
-                  onClick={() => {
-                    onSelectModel(key);
-                    onClose();
-                  }}
-                >
-                  <div className="model-card-icon" aria-hidden="true">
-                    {model.icon}
-                  </div>
-                  <div className="model-card-info">
-                    <div className="model-card-name">{model.name}</div>
-                    <div className="model-card-desc">{model.desc}</div>
-                  </div>
-                  <span className={`model-card-badge ${model.badgeClass || model.badge_class || ''}`}>
-                    {model.badge}
-                  </span>
-                </button>
-              );
-            })}
-          </>
-        )}
+        <div className="model-section-label">Cloudflare Workers AI</div>
+        {models.map((model) => {
+          const key = model.key;
+          const isActive = selectedModel === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`model-card ${isActive ? 'active' : ''}`}
+              onClick={() => {
+                onSelectModel(key);
+                onClose();
+              }}
+            >
+              <div className="model-card-icon" aria-hidden="true">
+                {model.icon}
+              </div>
+              <div className="model-card-info">
+                <div className="model-card-name">{model.name}</div>
+                <div className="model-card-desc">{model.desc}</div>
+              </div>
+              <span className={`model-card-badge ${model.badgeClass || model.badge_class || 'free'}`}>
+                {model.badge || 'Free daily'}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </Modal>
   );

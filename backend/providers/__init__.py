@@ -1,1 +1,1 @@
-# Provider package - Cloudflare Workers AI + Hugging Face Inference
+# Provider package - Cloudflare Workers AI
