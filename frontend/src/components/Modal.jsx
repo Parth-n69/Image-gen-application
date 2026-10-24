@@ -31,50 +31,95 @@ export function Modal({ isOpen, onClose, children, className = '' }) {
   );
 }
 
+/* ── Static fallback model options (used when /models hasn't loaded yet) ── */
 export const MODEL_OPTIONS = [
+  {
+    key: 'cf-flux-schnell',
+    name: 'FLUX.1 Schnell',
+    desc: 'Lightning-fast generation via Cloudflare Workers AI',
+    badge: 'Free daily',
+    badgeClass: 'free',
+    icon: '⚡',
+    provider: 'cloudflare',
+  },
+  {
+    key: 'cf-sdxl-lightning',
+    name: 'SDXL Lightning',
+    desc: 'High-resolution generation with negative prompt & custom sizes',
+    badge: 'Free daily',
+    badgeClass: 'free',
+    icon: '◈',
+    provider: 'cloudflare',
+  },
   {
     key: 'flux-schnell',
     name: 'FLUX Schnell',
     desc: 'Lightning-fast generation with remarkable clarity',
-    badge: 'Fast',
-    badgeClass: 'fast',
+    badge: 'Limited credits',
+    badgeClass: 'limited',
     icon: '⚡',
+    provider: 'huggingface',
   },
   {
     key: 'flux-dev',
     name: 'FLUX Dev',
     desc: 'Exceptional detail & prompt adherence for discerning creators',
-    badge: 'Quality',
-    badgeClass: 'quality',
+    badge: 'Limited credits',
+    badgeClass: 'limited',
     icon: '✦',
+    provider: 'huggingface',
   },
   {
     key: 'sd3.5',
     name: 'Stable Diffusion 3.5',
     desc: "Stability AI's flagship for complex composition",
-    badge: 'Quality',
-    badgeClass: 'quality',
+    badge: 'Limited credits',
+    badgeClass: 'limited',
     icon: '◈',
+    provider: 'huggingface',
   },
   {
     key: 'sdxl',
     name: 'Stable Diffusion XL',
     desc: 'Classic high-resolution model with rich aesthetics',
-    badge: 'Quality',
-    badgeClass: 'quality',
+    badge: 'Limited credits',
+    badgeClass: 'limited',
     icon: '❖',
+    provider: 'huggingface',
   },
 ];
 
 export const MODEL_LABELS = {
+  'cf-flux-schnell': 'FLUX.1 Schnell (CF)',
+  'cf-sdxl-lightning': 'SDXL Lightning (CF)',
   'flux-schnell': 'FLUX Schnell',
   'flux-dev': 'FLUX Dev',
   'sd3.5': 'Stable Diffusion 3.5',
   'sdxl': 'Stable Diffusion XL',
 };
 
-export function ModelPickerModal({ isOpen, onClose, selectedModel, onSelectModel }) {
+/**
+ * Build a label lookup from a dynamic model list.
+ * Falls back to MODEL_LABELS for keys not in the list.
+ */
+export function buildModelLabels(modelList) {
+  const labels = { ...MODEL_LABELS };
+  if (modelList && Array.isArray(modelList)) {
+    modelList.forEach((m) => {
+      labels[m.key] = m.name;
+    });
+  }
+  return labels;
+}
+
+export function ModelPickerModal({ isOpen, onClose, selectedModel, onSelectModel, dynamicModels }) {
   if (!isOpen) return null;
+
+  const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : MODEL_OPTIONS;
+
+  // Group by provider
+  const cfModels = models.filter((m) => m.provider === 'cloudflare');
+  const hfModels = models.filter((m) => m.provider === 'huggingface');
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="model-modal">
@@ -94,29 +139,71 @@ export function ModelPickerModal({ isOpen, onClose, selectedModel, onSelectModel
       </div>
 
       <div className="model-modal-grid">
-        {MODEL_OPTIONS.map((model) => {
-          const isActive = selectedModel === model.key;
-          return (
-            <button
-              key={model.key}
-              type="button"
-              className={`model-card ${isActive ? 'active' : ''}`}
-              onClick={() => {
-                onSelectModel(model.key);
-                onClose();
-              }}
-            >
-              <div className="model-card-icon" aria-hidden="true">
-                {model.icon}
-              </div>
-              <div className="model-card-info">
-                <div className="model-card-name">{model.name}</div>
-                <div className="model-card-desc">{model.desc}</div>
-              </div>
-              <span className={`model-card-badge ${model.badgeClass}`}>{model.badge}</span>
-            </button>
-          );
-        })}
+        {cfModels.length > 0 && (
+          <>
+            <div className="model-section-label">Cloudflare Workers AI</div>
+            {cfModels.map((model) => {
+              const key = model.key;
+              const isActive = selectedModel === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={`model-card ${isActive ? 'active' : ''}`}
+                  onClick={() => {
+                    onSelectModel(key);
+                    onClose();
+                  }}
+                >
+                  <div className="model-card-icon" aria-hidden="true">
+                    {model.icon}
+                  </div>
+                  <div className="model-card-info">
+                    <div className="model-card-name">{model.name}</div>
+                    <div className="model-card-desc">{model.desc}</div>
+                  </div>
+                  <span className={`model-card-badge ${model.badgeClass || model.badge_class || ''}`}>
+                    {model.badge}
+                  </span>
+                </button>
+              );
+            })}
+          </>
+        )}
+
+        {hfModels.length > 0 && (
+          <>
+            <div className="model-section-label" style={cfModels.length > 0 ? { marginTop: '8px' } : {}}>
+              Hugging Face
+            </div>
+            {hfModels.map((model) => {
+              const key = model.key;
+              const isActive = selectedModel === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={`model-card ${isActive ? 'active' : ''}`}
+                  onClick={() => {
+                    onSelectModel(key);
+                    onClose();
+                  }}
+                >
+                  <div className="model-card-icon" aria-hidden="true">
+                    {model.icon}
+                  </div>
+                  <div className="model-card-info">
+                    <div className="model-card-name">{model.name}</div>
+                    <div className="model-card-desc">{model.desc}</div>
+                  </div>
+                  <span className={`model-card-badge ${model.badgeClass || model.badge_class || ''}`}>
+                    {model.badge}
+                  </span>
+                </button>
+              );
+            })}
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -326,4 +413,3 @@ export function LightboxModal({
     </Modal>
   );
 }
-

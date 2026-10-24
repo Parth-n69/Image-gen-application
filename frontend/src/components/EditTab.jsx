@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { editImage } from '../lib/api';
+import { editImage, restyleImage } from '../lib/api';
 import { downloadImageFile } from '../lib/download';
 import { useToast } from './Toast';
 import './EditTab.css';
@@ -15,6 +15,14 @@ const PRESET_CHIPS = [
   'Anime style',
   'Add snow',
   'Change to black and white',
+];
+
+const RESTYLE_PRESETS = [
+  'Oil painting style',
+  'Watercolor wash',
+  'Cyberpunk neon',
+  'Studio Ghibli anime',
+  'Pencil sketch',
 ];
 
 const DEFAULT_BASE_EDITS = {
@@ -44,6 +52,14 @@ export function EditTab({
   const [aiPrompt, setAiPrompt] = useState('');
   const [selectedModel, setSelectedModel] = useState('kontext');
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // Edit mode: 'ai-edit' or 'restyle'
+  const [editMode, setEditMode] = useState('ai-edit');
+
+  // Restyle state (Cloudflare SDXL Lightning img2img)
+  const [restylePrompt, setRestylePrompt] = useState('');
+  const [restyleStrength, setRestyleStrength] = useState(75);
+  const [isRestyleLoading, setIsRestyleLoading] = useState(false);
 
   // Compare overlay
   const [isComparing, setIsComparing] = useState(false);
@@ -222,9 +238,53 @@ export function EditTab({
       };
       newImg.src = res.image;
     } catch (err) {
-      showToast(err.message || 'AI Edit failed. Please try again.');
+      if (err.code === 'HF_CREDITS') {
+        showToast('Hugging Face credits used up. Use the free basic tools (rotate, flip, adjust) below.');
+      } else {
+        showToast(err.message || 'AI Edit failed. Please try again.');
+      }
     } finally {
       setIsAiLoading(false);
+    }
+  };
+
+  // Restyle Apply (Cloudflare img2img)
+  const handleApplyRestyle = async () => {
+    const prompt = restylePrompt.trim();
+    if (!prompt || !sourceImage || isRestyleLoading) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dataUrl = canvas.toDataURL('image/png');
+    setIsRestyleLoading(true);
+
+    try {
+      const res = await restyleImage({
+        image: dataUrl,
+        prompt,
+        strength: restyleStrength / 100,
+      });
+
+      const newImg = new Image();
+      newImg.onload = () => {
+        setSourceImage(newImg);
+        setBaseEdits(DEFAULT_BASE_EDITS);
+        setEditHistory((prev) => {
+          const updated = [...prev, res.image];
+          return updated.slice(-10);
+        });
+        showToast('Restyle applied successfully!');
+      };
+      newImg.src = res.image;
+    } catch (err) {
+      if (err.code === 'CF_RATE_LIMIT' || err.code === 'LIMIT_REACHED') {
+        showToast(err.message || 'Rate limited. Please wait.');
+      } else {
+        showToast(err.message || 'Restyle failed. Please try again.');
+      }
+    } finally {
+      setIsRestyleLoading(false);
     }
   };
 
@@ -257,6 +317,7 @@ export function EditTab({
     downloadImageFile(dataUrl, aiPrompt.trim() || 'Edited_Image', showToast);
   };
 
+  const isAnyLoading = isAiLoading || isRestyleLoading;
   const hasImage = Boolean(sourceImage);
 
   return (
@@ -321,7 +382,7 @@ export function EditTab({
               type="button"
               className="edit-action-btn"
               title="Undo last change"
-              disabled={editHistory.length <= 1 || isAiLoading}
+              disabled={editHistory.length <= 1 || isAnyLoading}
               onClick={handleUndo}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
@@ -335,7 +396,7 @@ export function EditTab({
               type="button"
               className="edit-action-btn"
               title="Reset all basic adjustments"
-              disabled={isAiLoading}
+              disabled={isAnyLoading}
               onClick={handleReset}
             >
               Reset
@@ -359,69 +420,163 @@ export function EditTab({
 
       {/* ── Right Controls Panel ── */}
       <div className="edit-right">
-        {/* AI Magic Edit */}
-        <div className="edit-section">
-          <h3 className="edit-section-title">AI Magic Edit</h3>
-
-          <div className="edit-field">
-            <label>Describe the change</label>
-            <textarea
-              className="edit-prompt-input"
-              rows={2}
-              placeholder="e.g. make the sky sunset orange, add sunglasses..."
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              disabled={!hasImage || isAiLoading}
-            />
-          </div>
-
-          <div className="edit-field">
-            <label>Edit Model</label>
-            <select
-              className="edit-model-select"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              disabled={!hasImage || isAiLoading}
-            >
-              {EDIT_MODEL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="edit-chips">
-            {PRESET_CHIPS.map((chip) => (
-              <button
-                key={chip}
-                type="button"
-                className="edit-chip"
-                disabled={!hasImage || isAiLoading}
-                onClick={() => setAiPrompt(chip)}
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
-
+        {/* AI Mode Tabs */}
+        <div className="edit-mode-tabs">
           <button
             type="button"
-            className="export-btn primary w-full"
-            style={{ width: '100%', marginTop: '4px' }}
-            disabled={!hasImage || isAiLoading || !aiPrompt.trim()}
-            onClick={handleApplyAiEdit}
+            className={`edit-mode-tab ${editMode === 'ai-edit' ? 'active' : ''}`}
+            onClick={() => setEditMode('ai-edit')}
+            disabled={isAnyLoading}
           >
-            {isAiLoading ? 'Applying AI Edit…' : 'Apply AI Edit'}
+            ✦ AI Edit
           </button>
-
-          {isAiLoading && (
-            <div className="edit-loading-indicator">
-              <div className="edit-spinner" />
-              <span>Editing... this can take 20–40s</span>
-            </div>
-          )}
+          <button
+            type="button"
+            className={`edit-mode-tab ${editMode === 'restyle' ? 'active' : ''}`}
+            onClick={() => setEditMode('restyle')}
+            disabled={isAnyLoading}
+          >
+            ⚡ Restyle
+            <span className="edit-mode-badge free">Free</span>
+          </button>
         </div>
+
+        {/* AI Magic Edit */}
+        {editMode === 'ai-edit' && (
+          <div className="edit-section">
+            <h3 className="edit-section-title">AI Magic Edit</h3>
+            <p className="edit-section-hint">Uses Hugging Face · Limited credits</p>
+
+            <div className="edit-field">
+              <label>Describe the change</label>
+              <textarea
+                className="edit-prompt-input"
+                rows={2}
+                placeholder="e.g. make the sky sunset orange, add sunglasses..."
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                disabled={!hasImage || isAnyLoading}
+              />
+            </div>
+
+            <div className="edit-field">
+              <label>Edit Model</label>
+              <select
+                className="edit-model-select"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={!hasImage || isAnyLoading}
+              >
+                {EDIT_MODEL_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="edit-chips">
+              {PRESET_CHIPS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className="edit-chip"
+                  disabled={!hasImage || isAnyLoading}
+                  onClick={() => setAiPrompt(chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="export-btn primary w-full"
+              style={{ width: '100%', marginTop: '4px' }}
+              disabled={!hasImage || isAnyLoading || !aiPrompt.trim()}
+              onClick={handleApplyAiEdit}
+            >
+              {isAiLoading ? 'Applying AI Edit…' : 'Apply AI Edit'}
+            </button>
+
+            {isAiLoading && (
+              <div className="edit-loading-indicator">
+                <div className="edit-spinner" />
+                <span>Editing... this can take 20–40s</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Restyle (Cloudflare SDXL Lightning img2img) */}
+        {editMode === 'restyle' && (
+          <div className="edit-section">
+            <h3 className="edit-section-title">Restyle Image</h3>
+            <p className="edit-section-hint">Powered by Cloudflare SDXL Lightning · Free daily</p>
+
+            <div className="edit-field">
+              <label>Describe the new style</label>
+              <textarea
+                className="edit-prompt-input"
+                rows={2}
+                placeholder="e.g. oil painting, watercolor, cyberpunk neon..."
+                value={restylePrompt}
+                onChange={(e) => setRestylePrompt(e.target.value)}
+                disabled={!hasImage || isAnyLoading}
+              />
+            </div>
+
+            <div className="slider-group">
+              <label>
+                <span>Transformation Strength</span>
+                <span>{restyleStrength}%</span>
+              </label>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                value={restyleStrength}
+                disabled={!hasImage || isAnyLoading}
+                onChange={(e) => setRestyleStrength(Number(e.target.value))}
+              />
+              <div className="strength-labels">
+                <span>Subtle</span>
+                <span>Strong</span>
+              </div>
+            </div>
+
+            <div className="edit-chips">
+              {RESTYLE_PRESETS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className="edit-chip"
+                  disabled={!hasImage || isAnyLoading}
+                  onClick={() => setRestylePrompt(chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="export-btn primary w-full"
+              style={{ width: '100%', marginTop: '4px' }}
+              disabled={!hasImage || isAnyLoading || !restylePrompt.trim()}
+              onClick={handleApplyRestyle}
+            >
+              {isRestyleLoading ? 'Restyling…' : 'Apply Restyle'}
+            </button>
+
+            {isRestyleLoading && (
+              <div className="edit-loading-indicator">
+                <div className="edit-spinner" />
+                <span>Restyling... this can take 15–30s</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Basic Tools */}
         <div className="edit-section">
@@ -432,7 +587,7 @@ export function EditTab({
               type="button"
               className="tool-btn"
               title="Rotate Left (-90°)"
-              disabled={!hasImage || isAiLoading}
+              disabled={!hasImage || isAnyLoading}
               onClick={() =>
                 setBaseEdits((prev) => ({
                   ...prev,
@@ -591,7 +746,7 @@ export function EditTab({
             <button
               type="button"
               className="export-btn"
-              disabled={!hasImage || isAiLoading}
+              disabled={!hasImage || isAnyLoading}
               onClick={handleSaveToGallery}
             >
               Save to Gallery
@@ -599,7 +754,7 @@ export function EditTab({
             <button
               type="button"
               className="export-btn primary"
-              disabled={!hasImage || isAiLoading}
+              disabled={!hasImage || isAnyLoading}
               onClick={handleDownload}
             >
               Download

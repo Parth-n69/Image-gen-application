@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Header } from '../components/Header';
-import { ModelPickerModal, MODEL_LABELS } from '../components/Modal';
+import { ModelPickerModal, MODEL_LABELS, buildModelLabels } from '../components/Modal';
 import { GenerationShimmer } from '../components/Skeleton';
 import { GalleryTab } from '../components/GalleryTab';
 import { EditTab } from '../components/EditTab';
 import { useGenerations } from '../hooks/useGenerations';
 import { useToast } from '../components/Toast';
-import { generateImage, getBackendStatus } from '../lib/api';
+import { generateImage, getBackendStatus, getModelList } from '../lib/api';
 import { autocorrectLastWord } from '../lib/autocorrect';
 import { downloadImageFile } from '../lib/download';
 import './Home.css';
@@ -57,6 +57,8 @@ function formatTime(ts) {
   return d.toLocaleDateString();
 }
 
+const MAX_PROMPT_LENGTH = 1000;
+
 export function Home() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'generate';
@@ -75,9 +77,13 @@ export function Home() {
     setSearchParams({ tab });
   };
 
+  // Dynamic model list from /models endpoint
+  const [dynamicModels, setDynamicModels] = useState([]);
+  const [modelLabels, setModelLabels] = useState(MODEL_LABELS);
+
   // Generation options state
   const [selectedModel, setSelectedModel] = useState(() => {
-    return localStorage.getItem('default_model') || 'flux-schnell';
+    return localStorage.getItem('default_model') || 'cf-flux-schnell';
   });
   const [activeStyle, setActiveStyle] = useState(() => {
     return localStorage.getItem('default_style') || 'none';
@@ -97,7 +103,13 @@ export function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Credits state
-  const [credits, setCredits] = useState({ remaining: 4, dailyLimit: 4, status: 'ok' });
+  const [credits, setCredits] = useState({
+    remaining: 20,
+    dailyLimit: 20,
+    cfRemaining: 20,
+    cfDailyLimit: 20,
+    status: 'ok',
+  });
 
   // Mobile sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -106,13 +118,48 @@ export function Home() {
   const promptInputRef = useRef(null);
   const chatScrollRef = useRef(null);
 
+  // Fetch models list on mount
+  useEffect(() => {
+    let active = true;
+    getModelList()
+      .then((data) => {
+        if (active && data.models && data.models.length > 0) {
+          setDynamicModels(data.models);
+          setModelLabels(buildModelLabels(data.models));
+
+          // Update selected model to the backend default if current one is not available
+          const availableKeys = data.models.map((m) => m.key);
+          setSelectedModel((prev) => {
+            const stored = localStorage.getItem('default_model');
+            if (stored && availableKeys.includes(stored)) return stored;
+            if (availableKeys.includes(prev)) return prev;
+            return data.default || availableKeys[0] || prev;
+          });
+
+          if (data.cf_remaining !== undefined) {
+            setCredits((prev) => ({
+              ...prev,
+              cfRemaining: data.cf_remaining,
+              cfDailyLimit: data.cf_daily_limit || prev.cfDailyLimit,
+            }));
+          }
+        }
+      })
+      .catch(() => {
+        // Fall back to static list
+      });
+    return () => { active = false; };
+  }, []);
+
   // Fetch credits on mount
   const refreshCredits = useCallback(async () => {
     try {
       const data = await getBackendStatus();
       setCredits({
-        remaining: data.remaining ?? 4,
-        dailyLimit: data.daily_limit ?? 4,
+        remaining: data.remaining ?? 20,
+        dailyLimit: data.daily_limit ?? 20,
+        cfRemaining: data.cf_remaining ?? 20,
+        cfDailyLimit: data.cf_daily_limit ?? 20,
         status: 'ok',
       });
     } catch {
@@ -126,8 +173,10 @@ export function Home() {
       .then((data) => {
         if (active) {
           setCredits({
-            remaining: data.remaining ?? 4,
-            dailyLimit: data.daily_limit ?? 4,
+            remaining: data.remaining ?? 20,
+            dailyLimit: data.daily_limit ?? 20,
+            cfRemaining: data.cf_remaining ?? 20,
+            cfDailyLimit: data.cf_daily_limit ?? 20,
             status: 'ok',
           });
         }
@@ -149,19 +198,53 @@ export function Home() {
     }
   }, [messages]);
 
-  // Auto-resize textarea
+  // Auto-resize textarea whenever promptText changes or chat view activates
+  useEffect(() => {
+    if (promptInputRef.current) {
+      promptInputRef.current.style.height = 'auto';
+      promptInputRef.current.style.height = `${Math.min(
+        promptInputRef.current.scrollHeight,
+        220
+      )}px`;
+    }
+  }, [promptText, isChatActive]);
+
+  // Handle textarea text changes with truncation support
   const handlePromptInputChange = (e) => {
     const val = e.target.value;
-    if (val.length <= 500) {
+    if (val.length > MAX_PROMPT_LENGTH) {
+      setPromptText(val.slice(0, MAX_PROMPT_LENGTH));
+    } else {
       setPromptText(val);
-      e.target.style.height = 'auto';
-      e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
     }
   };
 
-  // Autocorrect on Space or Enter
+  // Handle pasting multiline prompts cleanly without clipping
+  const handlePromptPaste = (e) => {
+    const pastedText = e.clipboardData?.getData('text');
+    if (!pastedText) return;
+
+    e.preventDefault();
+    const target = e.target;
+    const start = target.selectionStart ?? 0;
+    const end = target.selectionEnd ?? 0;
+    const current = target.value || '';
+
+    const combined = current.slice(0, start) + pastedText + current.slice(end);
+    const trimmed = combined.slice(0, MAX_PROMPT_LENGTH);
+    setPromptText(trimmed);
+
+    const newCursorPos = Math.min(start + pastedText.length, MAX_PROMPT_LENGTH);
+    setTimeout(() => {
+      if (promptInputRef.current) {
+        promptInputRef.current.selectionStart = promptInputRef.current.selectionEnd = newCursorPos;
+      }
+    }, 0);
+  };
+
+  // Autocorrect on Space or Enter; Shift+Enter inserts newline, Enter submits
   const handlePromptKeyDown = (e) => {
-    if (e.key === ' ' || e.key === 'Enter') {
+    if (e.key === ' ' || (e.key === 'Enter' && !e.shiftKey)) {
       const target = e.target;
       const cursorPos = target.selectionStart;
       const res = autocorrectLastWord(target.value, cursorPos);
@@ -174,7 +257,8 @@ export function Home() {
       }
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Submit on Enter (without Shift) or Ctrl/Cmd + Enter
+    if ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       handleGenerate();
     }
@@ -248,6 +332,9 @@ export function Home() {
     setSearchParams({ tab: 'edit', img: record.id || '' });
   };
 
+  // Determine if currently selected model is Cloudflare
+  const isCfModel = selectedModel.startsWith('cf-');
+
   // Core Generation Function
   const handleGenerate = async (customPrompt = null) => {
     const promptToSend = (customPrompt !== null ? customPrompt : promptText).trim();
@@ -270,7 +357,7 @@ export function Home() {
     }
 
     const [width, height] = activeRatio.split('x').map(Number);
-    const modelName = MODEL_LABELS[selectedModel] || selectedModel;
+    const modelName = modelLabels[selectedModel] || selectedModel;
     const styleLabel = activeStyle !== 'none' ? ` (${activeStyle} style)` : '';
 
     // Add user message & loading AI message
@@ -298,6 +385,8 @@ export function Home() {
           ...prev,
           remaining: data.remaining,
           dailyLimit: data.daily_limit || prev.dailyLimit,
+          cfRemaining: data.cf_remaining !== undefined ? data.cf_remaining : prev.cfRemaining,
+          cfDailyLimit: data.cf_daily_limit || prev.cfDailyLimit,
         }));
       }
 
@@ -323,12 +412,16 @@ export function Home() {
           content: `Here's your image for "${shortPrompt}"`,
           image: data.image,
           recordId: savedRecord?.id,
+          note: data.note || null,
         };
         return updated;
       });
     } catch (err) {
       if (err.code === 'LIMIT_REACHED') {
         setCredits((prev) => ({ ...prev, remaining: 0 }));
+      }
+      if (err.code === 'CF_RATE_LIMIT') {
+        setCredits((prev) => ({ ...prev, cfRemaining: 0 }));
       }
       setMessages((prev) => {
         const updated = [...prev];
@@ -344,6 +437,143 @@ export function Home() {
       refreshCredits();
     }
   };
+
+  // Compute CF remaining text
+  const cfRemainingText = isCfModel
+    ? `${credits.cfRemaining} image${credits.cfRemaining !== 1 ? 's' : ''} left today`
+    : null;
+  const cfRemainingClass = credits.cfRemaining === 0
+    ? 'depleted'
+    : credits.cfRemaining <= 3
+    ? 'low'
+    : '';
+
+  // Shared toolbar rendering (used in both welcome screen and chat input bar)
+  const renderToolbar = () => (
+    <div className="input-toolbar">
+      <div className="toolbar-left">
+        <button
+          type="button"
+          className="model-picker-btn"
+          onClick={() => setIsModelModalOpen(true)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+          <span>{modelLabels[selectedModel] || selectedModel}</span>
+          <svg className="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          className={`options-toggle-btn ${isOptionsOpen ? 'active' : ''}`}
+          onClick={() => setIsOptionsOpen((prev) => !prev)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <line x1="4" y1="21" x2="4" y2="14" />
+            <line x1="4" y1="10" x2="4" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12" y2="3" />
+            <line x1="20" y1="21" x2="20" y2="16" />
+            <line x1="20" y1="12" x2="20" y2="3" />
+            <line x1="1" y1="14" x2="7" y2="14" />
+            <line x1="9" y1="8" x2="15" y2="8" />
+            <line x1="17" y1="16" x2="23" y2="16" />
+          </svg>
+          <span>Options</span>
+        </button>
+
+        <button
+          type="button"
+          className={`enhancer-toggle-btn ${enhancerActive ? 'active' : ''}`}
+          onClick={() => setEnhancerActive((prev) => !prev)}
+          title="Toggle AI prompt quality enhancement"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+          </svg>
+          <span>Enhancer {enhancerActive ? 'ON' : 'OFF'}</span>
+        </button>
+      </div>
+
+      <div className="toolbar-right">
+        {cfRemainingText && (
+          <span className={`cf-remaining-badge ${cfRemainingClass}`}>
+            {cfRemainingText}
+          </span>
+        )}
+        <span
+          className={`char-count ${
+            promptText.length >= MAX_PROMPT_LENGTH
+              ? 'at-limit'
+              : promptText.length >= MAX_PROMPT_LENGTH * 0.85
+              ? 'near-limit'
+              : ''
+          }`}
+        >
+          {promptText.length} / {MAX_PROMPT_LENGTH}
+        </span>
+      </div>
+    </div>
+  );
+
+  // Shared options panel rendering
+  const renderOptionsPanel = () => (
+    isOptionsOpen && (
+      <div className="generation-options">
+        <div className="options-row">
+          <div className="options-group">
+            <label>Style Preset</label>
+            <div className="preset-buttons">
+              {['none', 'Realistic Photo', 'Anime', '3D Render', 'Digital Art', 'Oil Painting'].map(
+                (style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    className={`preset-btn ${activeStyle === style ? 'active' : ''}`}
+                    onClick={() => setActiveStyle(style)}
+                  >
+                    {style === 'none' ? 'None' : style}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="options-row">
+          <div className="options-group">
+            <label>Aspect Ratio</label>
+            <div className="preset-buttons">
+              {ASPECT_RATIOS.map((ratio) => (
+                <button
+                  key={ratio.value}
+                  type="button"
+                  className={`preset-btn ${activeRatio === ratio.value ? 'active' : ''}`}
+                  onClick={() => setActiveRatio(ratio.value)}
+                >
+                  {ratio.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="options-group w-full">
+          <label>Negative Prompt</label>
+          <input
+            type="text"
+            className="negative-prompt-input"
+            placeholder="Elements you want to exclude (e.g. blurry, watermark, distortion)"
+            value={negativePrompt}
+            onChange={(e) => setNegativePrompt(e.target.value)}
+          />
+        </div>
+      </div>
+    )
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
@@ -459,7 +689,7 @@ export function Home() {
               </span>
             </div>
             <div className="sidebar-meta">
-              Model: <strong>{MODEL_LABELS[selectedModel] || selectedModel}</strong>
+              Model: <strong>{modelLabels[selectedModel] || selectedModel}</strong>
             </div>
           </div>
         </aside>
@@ -487,58 +717,7 @@ export function Home() {
                     {/* Centered Input Area */}
                     <div className="welcome-input-area">
                       {/* Generation Options Panel if open */}
-                      {isOptionsOpen && (
-                        <div className="generation-options">
-                          <div className="options-row">
-                            <div className="options-group">
-                              <label>Style Preset</label>
-                              <div className="preset-buttons">
-                                {['none', 'Realistic Photo', 'Anime', '3D Render', 'Digital Art', 'Oil Painting'].map(
-                                  (style) => (
-                                    <button
-                                      key={style}
-                                      type="button"
-                                      className={`preset-btn ${activeStyle === style ? 'active' : ''}`}
-                                      onClick={() => setActiveStyle(style)}
-                                    >
-                                      {style === 'none' ? 'None' : style}
-                                    </button>
-                                  )
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="options-row">
-                            <div className="options-group">
-                              <label>Aspect Ratio</label>
-                              <div className="preset-buttons">
-                                {ASPECT_RATIOS.map((ratio) => (
-                                  <button
-                                    key={ratio.value}
-                                    type="button"
-                                    className={`preset-btn ${activeRatio === ratio.value ? 'active' : ''}`}
-                                    onClick={() => setActiveRatio(ratio.value)}
-                                  >
-                                    {ratio.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="options-group w-full">
-                            <label>Negative Prompt</label>
-                            <input
-                              type="text"
-                              className="negative-prompt-input"
-                              placeholder="Elements you want to exclude (e.g. blurry, watermark, distortion)"
-                              value={negativePrompt}
-                              onChange={(e) => setNegativePrompt(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      )}
+                      {renderOptionsPanel()}
 
                       <div className="input-bar-inner">
                         <textarea
@@ -549,6 +728,7 @@ export function Home() {
                           value={promptText}
                           onChange={handlePromptInputChange}
                           onKeyDown={handlePromptKeyDown}
+                          onPaste={handlePromptPaste}
                           autoFocus
                         />
                         <button
@@ -565,68 +745,7 @@ export function Home() {
                         </button>
                       </div>
 
-                      <div className="input-toolbar">
-                        <div className="toolbar-left">
-                          <button
-                            type="button"
-                            className="model-picker-btn"
-                            onClick={() => setIsModelModalOpen(true)}
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                            </svg>
-                            <span>{MODEL_LABELS[selectedModel] || selectedModel}</span>
-                            <svg className="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                              <polyline points="6 9 12 15 18 9" />
-                            </svg>
-                          </button>
-
-                          <button
-                            type="button"
-                            className={`options-toggle-btn ${isOptionsOpen ? 'active' : ''}`}
-                            onClick={() => setIsOptionsOpen((prev) => !prev)}
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                              <line x1="4" y1="21" x2="4" y2="14" />
-                              <line x1="4" y1="10" x2="4" y2="3" />
-                              <line x1="12" y1="21" x2="12" y2="12" />
-                              <line x1="12" y1="8" x2="12" y2="3" />
-                              <line x1="20" y1="21" x2="20" y2="16" />
-                              <line x1="20" y1="12" x2="20" y2="3" />
-                              <line x1="1" y1="14" x2="7" y2="14" />
-                              <line x1="9" y1="8" x2="15" y2="8" />
-                              <line x1="17" y1="16" x2="23" y2="16" />
-                            </svg>
-                            <span>Options</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className={`enhancer-toggle-btn ${enhancerActive ? 'active' : ''}`}
-                            onClick={() => setEnhancerActive((prev) => !prev)}
-                            title="Toggle AI prompt quality enhancement"
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                            </svg>
-                            <span>Enhancer {enhancerActive ? 'ON' : 'OFF'}</span>
-                          </button>
-                        </div>
-
-                        <div className="toolbar-right">
-                          <span
-                            className={`char-count ${
-                              promptText.length >= 500
-                                ? 'at-limit'
-                                : promptText.length >= 400
-                                ? 'near-limit'
-                                : ''
-                            }`}
-                          >
-                            {promptText.length} / 500
-                          </span>
-                        </div>
-                      </div>
+                      {renderToolbar()}
                     </div>
 
                     {/* Quick Inspiration Chips */}
@@ -678,6 +797,9 @@ export function Home() {
                               <div className="msg-image-wrap">
                                 <img src={msg.image} alt={msg.content || 'Generated image'} />
                               </div>
+                              {msg.note && (
+                                <div className="msg-note">{msg.note}</div>
+                              )}
                               <div className="msg-actions">
                                 <button
                                   type="button"
@@ -714,58 +836,7 @@ export function Home() {
               {/* Bottom Input Bar when Chat Active */}
               {isChatActive && (
                 <div className="input-bar">
-                  {isOptionsOpen && (
-                    <div className="generation-options">
-                      <div className="options-row">
-                        <div className="options-group">
-                          <label>Style Preset</label>
-                          <div className="preset-buttons">
-                            {['none', 'Realistic Photo', 'Anime', '3D Render', 'Digital Art', 'Oil Painting'].map(
-                              (style) => (
-                                <button
-                                  key={style}
-                                  type="button"
-                                  className={`preset-btn ${activeStyle === style ? 'active' : ''}`}
-                                  onClick={() => setActiveStyle(style)}
-                                >
-                                  {style === 'none' ? 'None' : style}
-                                </button>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="options-row">
-                        <div className="options-group">
-                          <label>Aspect Ratio</label>
-                          <div className="preset-buttons">
-                            {ASPECT_RATIOS.map((ratio) => (
-                              <button
-                                key={ratio.value}
-                                type="button"
-                                className={`preset-btn ${activeRatio === ratio.value ? 'active' : ''}`}
-                                onClick={() => setActiveRatio(ratio.value)}
-                              >
-                                {ratio.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="options-group w-full">
-                        <label>Negative Prompt</label>
-                        <input
-                          type="text"
-                          className="negative-prompt-input"
-                          placeholder="Elements to exclude..."
-                          value={negativePrompt}
-                          onChange={(e) => setNegativePrompt(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
+                  {renderOptionsPanel()}
 
                   <div className="input-bar-inner">
                     <textarea
@@ -776,6 +847,7 @@ export function Home() {
                       value={promptText}
                       onChange={handlePromptInputChange}
                       onKeyDown={handlePromptKeyDown}
+                      onPaste={handlePromptPaste}
                     />
                     <button
                       type="button"
@@ -791,67 +863,7 @@ export function Home() {
                     </button>
                   </div>
 
-                  <div className="input-toolbar">
-                    <div className="toolbar-left">
-                      <button
-                        type="button"
-                        className="model-picker-btn"
-                        onClick={() => setIsModelModalOpen(true)}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                        </svg>
-                        <span>{MODEL_LABELS[selectedModel] || selectedModel}</span>
-                        <svg className="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`options-toggle-btn ${isOptionsOpen ? 'active' : ''}`}
-                        onClick={() => setIsOptionsOpen((prev) => !prev)}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <line x1="4" y1="21" x2="4" y2="14" />
-                          <line x1="4" y1="10" x2="4" y2="3" />
-                          <line x1="12" y1="21" x2="12" y2="12" />
-                          <line x1="12" y1="8" x2="12" y2="3" />
-                          <line x1="20" y1="21" x2="20" y2="16" />
-                          <line x1="20" y1="12" x2="20" y2="3" />
-                          <line x1="1" y1="14" x2="7" y2="14" />
-                          <line x1="9" y1="8" x2="15" y2="8" />
-                          <line x1="17" y1="16" x2="23" y2="16" />
-                        </svg>
-                        <span>Options</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`enhancer-toggle-btn ${enhancerActive ? 'active' : ''}`}
-                        onClick={() => setEnhancerActive((prev) => !prev)}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                        </svg>
-                        <span>Enhancer {enhancerActive ? 'ON' : 'OFF'}</span>
-                      </button>
-                    </div>
-
-                    <div className="toolbar-right">
-                      <span
-                        className={`char-count ${
-                          promptText.length >= 500
-                            ? 'at-limit'
-                            : promptText.length >= 400
-                            ? 'near-limit'
-                            : ''
-                        }`}
-                      >
-                        {promptText.length} / 500
-                      </span>
-                    </div>
-                  </div>
+                  {renderToolbar()}
                 </div>
               )}
             </>
@@ -888,6 +900,7 @@ export function Home() {
         onClose={() => setIsModelModalOpen(false)}
         selectedModel={selectedModel}
         onSelectModel={(modelKey) => setSelectedModel(modelKey)}
+        dynamicModels={dynamicModels}
       />
     </div>
   );

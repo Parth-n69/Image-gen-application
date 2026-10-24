@@ -236,7 +236,9 @@
   box-sizing: border-box;
 }
 
-.edit-prompt-input:focus {
+.edit-prompt-input:focus,
+.edit-prompt-input:focus-visible {
+  outline: none;
   border-color: var(--gold);
   box-shadow: var(--glow);
 }
@@ -440,6 +442,83 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── Edit Mode Tabs (AI Edit / Restyle) ─────────────────────── */
+.edit-mode-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.edit-mode-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--t-smooth);
+  position: relative;
+}
+
+.edit-mode-tab:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.edit-mode-tab.active {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.08);
+}
+
+.edit-mode-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.edit-mode-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.edit-mode-badge.free {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+}
+
+/* ── Section Hint (subtitle under AI section title) ─────────── */
+.edit-section-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin: -4px 0 8px 0;
+  opacity: 0.7;
+}
+
+/* ── Strength Slider Labels ─────────────────────────────────── */
+.strength-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  opacity: 0.7;
 }
 
 /* ── Responsive ─────────────────────────────────────────────── */
